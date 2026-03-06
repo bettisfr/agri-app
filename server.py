@@ -6,7 +6,6 @@ import io
 import zipfile
 import time
 import json
-import piexif
 import datetime  # needed for timestamp parsing
 
 app = Flask(__name__)
@@ -37,6 +36,16 @@ def json_path_for_image(filename: str) -> str:
     """
     base, _ = os.path.splitext(filename)
     return os.path.join(JSONS_DIR, base + ".json")
+
+
+def normalize_image_filename(raw_name: str) -> str:
+    """
+    Normalize and sanitize a client-provided image filename.
+    Returns empty string if invalid.
+    """
+    if not isinstance(raw_name, str):
+        return ""
+    return secure_filename(os.path.basename(raw_name))
 
 
 def is_image_labeled(filename: str) -> bool:
@@ -242,7 +251,7 @@ def get_labels():
     1) If per-image jsons/<stem>.json exists -> use that (authoritative).
     2) Else, if YOLO txt exists -> load those as is_tp = True.
     """
-    image_name = request.args.get("image")
+    image_name = normalize_image_filename(request.args.get("image", ""))
     if not image_name:
         return jsonify({"status": "error", "message": "Missing 'image' parameter"}), 400
 
@@ -312,11 +321,13 @@ def save_labels():
     - labels/<stem>.txt: only boxes with is_tp == True (YOLO format).
     """
     data = request.get_json(silent=True) or {}
-    image_name = data.get("image")
+    image_name = normalize_image_filename(data.get("image", ""))
     labels = data.get("labels", [])
 
     if not image_name:
         return jsonify({"status": "error", "message": "Missing 'image' field"}), 400
+    if not isinstance(labels, list):
+        return jsonify({"status": "error", "message": "'labels' must be a list"}), 400
 
     txt_path = yolo_txt_path_for_image(image_name)
 
@@ -541,7 +552,7 @@ def delete_image():
     Delete an image, its corresponding .txt labels, and its .json (if present).
     """
     data = request.get_json(silent=True) or {}
-    filename = data.get("filename")
+    filename = normalize_image_filename(data.get("filename", ""))
 
     if not filename:
         return jsonify({"status": "error", "message": "filename missing"}), 400

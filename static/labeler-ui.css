@@ -1,4 +1,6 @@
 :root {
+    --font-sans: "Source Sans 3", Arial, sans-serif;
+    --font-display: "Space Grotesk", "Source Sans 3", sans-serif;
     --ui-green: #2f7f49;
     --ui-green-hover: #25643a;
     --ui-border: #d8e6ef;
@@ -11,7 +13,7 @@ body {
     padding: 0;
     display: flex;
     justify-content: space-between;
-    font-family: "Source Sans 3", Arial, sans-serif;
+    font-family: var(--font-sans);
     height: 100vh;
     background: linear-gradient(180deg, var(--ui-bg) 0%, #ffffff 34%);
     color: var(--ui-text);
@@ -59,15 +61,17 @@ body {
 
 .sidebar-title-block h1 {
     margin: 0;
-    font-family: "Space Grotesk", "Source Sans 3", sans-serif;
-    font-size: 1.15rem;
+    font-family: var(--font-display);
+    font-size: 1.12rem;
+    letter-spacing: -0.01em;
     color: #17384d;
 }
 
 .sidebar-title-block p {
     margin: 4px 0 0;
     color: #42644f;
-    font-size: 0.9rem;
+    font-size: 0.92rem;
+    line-height: 1.4;
 }
 
 #imageArea {
@@ -115,6 +119,7 @@ body {
     background: #eef7ef;
     padding: 9px 10px;
     color: #2f5a3d;
+    font-size: 0.92rem;
     font-weight: 600;
 }
 
@@ -149,6 +154,7 @@ body {
 .info-value {
     color: #18384d;
     font-weight: 700;
+    font-size: 0.95rem;
     word-break: break-all;
 }
 
@@ -159,6 +165,7 @@ body {
     width: fit-content;
     min-width: 34px;
     padding: 2px 8px;
+    font-size: 0.88rem;
     border-radius: 999px;
     background: #e7f4ea;
     border: 1px solid #c9e2cf;
@@ -199,6 +206,8 @@ button.option-button {
     color: white;
     border: 1px solid var(--ui-green);
     border-radius: 10px;
+    font-family: inherit;
+    font-size: 0.93rem;
     font-weight: 700;
     cursor: pointer;
 }
@@ -256,6 +265,8 @@ button.option-button:hover {
     background: #eef7ef;
     border-radius: 8px;
     color: #245638;
+    font-family: inherit;
+    font-size: 0.88rem;
     font-weight: 700;
     cursor: pointer;
 }
@@ -270,6 +281,8 @@ button.option-button:hover {
     border: 1px solid #c9dbe7;
     border-radius: 8px;
     padding: 5px 8px;
+    font-family: inherit;
+    font-size: 0.9rem;
     background: #fff;
 }
 
