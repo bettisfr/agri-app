@@ -1,0 +1,6 @@
+#static/uploads/*
+.idea
+static/uploads/images
+static/uploads/labels
+static/uploads/jsons
+/__pycache__

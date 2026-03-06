@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>YOLO Image Labeler</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='labeler.css') }}">
+</head>
+<body>
+    <!-- Viewer -->
+    <div id="viewer">
+        <div id="imageArea" class="stage">
+            <img id="previewImage" alt="No image loaded">
+            <canvas id="bboxCanvas"></canvas>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar">
+        <!-- No file selection here; keep container in case you want
+             extra controls later, but it will stay empty -->
+        <div id="options"></div>
+
+        <div id="controlsArea" class="disabled">
+            <div id="status">Waiting for image parameter (?image=...).</div>
+
+            <section id="info" style="margin-top:10px;">
+                <p><b>File:</b> <span id="imgName">—</span></p>
+                <p><b>Labels:</b> <span id="numLabels">—</span></p>
+            </section>
+
+            <hr>
+
+            <section id="labelsPanel">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>Labels</strong>
+                </div>
+
+                <div id="labelsList" style="margin-top:10px;"></div>
+            </section>
+
+            <div style="margin-top:12px;">
+                <button id="saveTxtBtn" class="option-button">Save labels</button>
+            </div>
+
+        </div>
+    </aside>
+
+    <!-- IMPORTANT: point to the labeler-specific JS, not the gallery one -->
+    <script src="{{ url_for('static', filename='labeler.js') }}"></script>
+</body>
+</html>
