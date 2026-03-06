@@ -5,3 +5,4 @@ static/uploads/labels
 static/uploads/jsons
 /__pycache__
 .codex*
+.env.systemd

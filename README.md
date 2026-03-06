@@ -1,122 +1,143 @@
-# AgriApp: Raspberry Pi Camera with YOLO Detection and Web Gallery
+# AgriApp
 
-This repository contains a complete client-server pipeline for remote wildlife/insect/environmental monitoring using Raspberry Pi cameras equipped with object detection, metadata enrichment, and gallery visualization.
+Edge app for Raspberry Pi camera capture + local web gallery/labeling.
 
----
+## What Is In This Repo
 
-## 🗂️ Project Structure
+- `server.py`
+  - Runs the web server on port `5000`.
+  - Serves home/gallery/labeler UI.
+  - Exposes APIs for image listing, label save/load, delete, and dataset download.
 
-- **`server.py`**  
-  Launches the server:
-  - Receives images uploaded by remote clients (Raspberry Pi).
-  - Hosts a web-based gallery to browse images and metadata.
+- `client.py`
+  - Captures images from Raspberry Pi camera (`rpicam-still` / `libcamera-still`).
+  - Supports single shot (`--oneshot`) or periodic capture (`--interval`).
+  - Includes autofocus and image tuning options.
 
-- **`client.py`**  
-  Runs on the Raspberry Pi:
-  - Captures images.
-  - Collects GPS coordinates and weather data.
-  - Embeds metadata in the images before uploading them to the server.
+- `scripts/run_server.sh`
+  - Starts `server.py` loading Python env (pyenv or venv fallback).
 
-- **`autorun.py`**  
-  Autostarts the client on Raspberry Pi boot:
-  - Attempts to ping a pre-defined server.
-  - If reachable, activates the virtual environment and runs the client script.
+- `scripts/run_capture.sh`
+  - Starts `client.py` loading Python env (pyenv or venv fallback).
+  - With args: forwards args to `client.py` (example: `--oneshot`).
+  - Without args: runs continuous capture using `CAPTURE_INTERVAL` (default 30s).
 
-- **`rpi.py`**  
-  Utility to **test YOLO model performance** directly on the Raspberry Pi:
-  - Converts models to various formats (e.g., OpenVINO, TFLite).
-  - Profiles RAM, CPU usage, and inference time.
+- `systemd/`
+  - User services for unattended startup:
+    - `agriapp-server.service`
+    - `agriapp-capture.service`
 
-- **`benchmark.py`**  
-  Runs multiple tests in sequence (on a PC) using `rpi.py` to:
-  - Evaluate different YOLO model variants and settings.
-  - Compare performance across precision and formats.
+- `old/`
+  - Deprecated legacy scripts kept only for reference.
 
----
+## Quick Start
 
-## 🚀 Getting Started
-
-### 🖥 Server Setup
-
-After starting the server, the web gallery is accessible at:
-```
-http://<server-ip>:5000
-```
-Replace `<server-ip>` with the actual IP address or hostname of the server.
-
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Run server:
+
+```bash
 python server.py
 ```
 
-### 🍓 Raspberry Pi Client Setup
+Open:
 
-1. Clone the repo and install dependencies (use a virtual environment).
-2. Place the script in `autorun.py` to ensure auto-execution on boot.
-3. Make sure `client.py` has the correct upload target URL and metadata sources.
+```text
+http://<rpi-ip>:5000/gallery
+```
+
+Single photo capture:
 
 ```bash
-source insectenv/bin/activate
-python client.py
+python client.py --oneshot
 ```
 
----
+Continuous capture every 5 minutes:
 
-## 🧪 Model Testing & Benchmarking
-
-Use `rpi.py` to:
-- Export YOLO models to optimized formats.
-- Measure performance with realistic input data.
-
-Example usage:
-```python
-run_test("v11n", "FP16", "openvino")
+```bash
+python client.py --interval 300
 ```
 
-Use `benchmark.py` to:
-- Run batch experiments from a desktop host.
-- Analyze performance trends across models and formats.
+## Recommended Camera Commands
 
----
+Default tuned single shot (current project defaults are already optimized):
 
-## 📸 Features
-
-✅ Image upload from multiple Pi devices  
-✅ Embedded GPS & weather metadata  
-✅ YOLO object detection on-device  
-✅ Performance profiling (RAM, CPU, latency)  
-✅ Web gallery interface
-
----
-
-## 📁 Folder Structure (Example)
-
-```
-├── server.py
-├── client.py
-├── autorun.py
-├── rpi.py
-├── benchmark.py
-├── models/
-│   └── [YOLO models and weights]
-├── src/
-│   ├── learning/
-│   │   └── test/images/   # Test images for benchmarking
-│   └── data.yaml          # Dataset configuration
+```bash
+python client.py --oneshot
 ```
 
----
+Manual example with explicit values:
 
-## 📌 Notes
+```bash
+python client.py --oneshot --profile standard --af-mode continuous --af-range full --zoom 1.0 --quality 100 --warmup-ms 2000 --timeout-ms 3000 --af-window 0.35,0.35,0.30,0.30
+```
 
-- Tested with YOLOv8, v9, v10, and v11 variants.
-- Some model-format-precision combinations may not be supported (e.g., INT8 + TFLite).
-- Adapt paths inside scripts if using a different folder layout.
+## Environment File
 
----
+Optional file used by wrapper scripts:
 
-## 📜 License
+`~/insect-cloud/.env.systemd`
 
-MIT License.  
-See `LICENSE` file for more details.
+Example:
+
+```bash
+PYENV_ROOT=/home/fra/pyenv
+# optional if you use pyenv manager (not needed for plain venv fallback)
+# PYENV_VERSION=agriapp-rpi
+CAPTURE_INTERVAL=300
+```
+
+## Boot Autostart (Systemd User Services)
+
+Install services on Raspberry Pi:
+
+```bash
+cd ~/insect-cloud
+./scripts/install_systemd_user_services.sh
+```
+
+Enable lingering (required for user services at boot, without interactive login):
+
+```bash
+sudo loginctl enable-linger fra
+```
+
+### Operational Commands (`--user` required)
+
+```bash
+# Server
+systemctl --user start agriapp-server.service
+systemctl --user stop agriapp-server.service
+systemctl --user restart agriapp-server.service
+systemctl --user status agriapp-server.service
+systemctl --user enable agriapp-server.service
+systemctl --user disable agriapp-server.service
+
+# Capture (if you choose systemd for capture)
+systemctl --user start agriapp-capture.service
+systemctl --user stop agriapp-capture.service
+systemctl --user restart agriapp-capture.service
+systemctl --user status agriapp-capture.service
+systemctl --user enable agriapp-capture.service
+systemctl --user disable agriapp-capture.service
+
+# Logs
+journalctl --user -u agriapp-server.service -n 100 --no-pager
+journalctl --user -u agriapp-server.service -f
+journalctl --user -u agriapp-capture.service -n 100 --no-pager
+journalctl --user -u agriapp-capture.service -f
+```
+
+## Notes
+
+- Current preferred deployment strategy:
+  - `systemd` for server
+  - `cron` (or systemd) for timed capture, depending on scheduling needs.
+- The gallery/labeler work on images in:
+  - `static/uploads/images`
+  - labels in `static/uploads/labels`
+  - JSON annotations in `static/uploads/jsons`

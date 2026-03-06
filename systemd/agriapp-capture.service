@@ -1,0 +1,14 @@
+[Unit]
+Description=AgriApp Camera Capture Loop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fra/insect-cloud
+ExecStart=/home/fra/insect-cloud/scripts/run_capture.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
