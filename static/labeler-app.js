@@ -889,6 +889,12 @@ function initZoom() {
     });
 
     stage.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    // Keep initial fit sane when modal/viewport size changes.
+    window.addEventListener("resize", () => {
+        if (!currentImage || !currentImage.name) return;
+        resetZoomToFit();
+    });
 }
 
 function resetZoomToFit() {
@@ -904,8 +910,13 @@ function resetZoomToFit() {
     const vh = viewer.clientHeight;
     if (!vw || !vh) return;
 
-    // scale so the whole image fits in the viewer, but don't upscale above 1
-    const scale = Math.min(vw / imgW, vh / imgH, 1);
+    // Leave visual breathing room so the modal never starts "too zoomed".
+    const fitPadding = 18;
+    const fitW = Math.max(vw - fitPadding * 2, 1);
+    const fitH = Math.max(vh - fitPadding * 2, 1);
+
+    // Scale so the whole image fits in the padded viewer, never upscale above 1.
+    const scale = Math.min(fitW / imgW, fitH / imgH, 1);
 
     zoomState.scale = scale;
 
