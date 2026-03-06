@@ -358,6 +358,12 @@ async function saveLabels() {
 
         // ✅ success: bold + green (handled inside setStatus)
         setStatus(data.message || "Labels saved.", "success");
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage(
+                {type: "labeler-saved", image: currentImage.name},
+                "*"
+            );
+        }
     } catch (err) {
         // ❌ error: bold + red (handled inside setStatus)
         setStatus(
@@ -759,19 +765,21 @@ function renderLabelsList() {
     container.innerHTML = "";
 
     if (!labels || labels.length === 0) {
-        container.textContent = "(no labels)";
+        container.innerHTML = '<div class="labels-empty">(no labels)</div>';
         return;
     }
 
     labels.forEach((lab, i) => {
         const row = document.createElement("div");
         row.classList.add("label-row");
+        if (i === selectedId) {
+            row.classList.add("selected");
+        }
         row.dataset.id = i;
 
         const idx = document.createElement("button");
         idx.textContent = `#${i}`;
-        idx.classList.add("mini-btn");
-        idx.style.fontWeight = "bold";
+        idx.classList.add("mini-btn", "label-select-btn");
         idx.onclick = (e) => {
             e.stopPropagation();
             selectedId = i;
@@ -784,13 +792,9 @@ function renderLabelsList() {
         };
         row.appendChild(idx);
 
-        const clsLabel = document.createElement("span");
-        clsLabel.textContent = CLASS_MAP[lab.cls] || `Class ${lab.cls}`;
-        clsLabel.style.fontWeight = "bold";
-        row.appendChild(clsLabel);
-
         const clsInput = document.createElement("select");
-        clsInput.style.width = "100%";   // give it room for full species name
+        clsInput.classList.add("label-class-select");
+        clsInput.setAttribute("aria-label", `Class for label ${i}`);
 
         CLASS_DEFS.forEach(c => {
             const opt = document.createElement("option");
@@ -805,21 +809,6 @@ function renderLabelsList() {
         clsInput.addEventListener("change", (e) => {
             const newVal = parseInt(e.target.value, 10);
             lab.cls = isNaN(newVal) ? 0 : newVal;
-
-            drawBBoxes(
-                document.getElementById("previewImage"),
-                document.getElementById("bboxCanvas"),
-                labels
-            );
-            renderLabelsList();
-        });
-
-
-        clsInput.style.width = "3.5em";
-
-        clsInput.addEventListener("change", (e) => {
-            const newVal = parseInt(e.target.value, 10);
-            lab.cls = newVal;
 
             drawBBoxes(
                 document.getElementById("previewImage"),
@@ -916,5 +905,3 @@ function resetZoomToFit() {
 
     applyTransform();
 }
-
-

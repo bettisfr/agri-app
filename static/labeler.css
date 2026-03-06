@@ -3,20 +3,69 @@ body {
     padding: 0;
     display: flex;
     justify-content: space-between;
-    font-family: Arial, sans-serif;
+    font-family: "Source Sans 3", Arial, sans-serif;
     height: 100vh;
+    background: linear-gradient(180deg, #edf7ef 0%, #ffffff 34%);
+    color: #132432;
 }
 
 /* ====== VIEWER ====== */
 #viewer {
     flex: 1;
     overflow: auto;
-    background: #fff;
+    background: #f7fcf8;
+    padding: 12px 12px 20px;
+    position: relative;
+}
+
+#backToGalleryBtn {
+    display: inline-block;
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid #2f7f49;
+    background: #ffffff;
+    color: #2f7f49;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+#backToGalleryBtn:hover {
+    background: #2f7f49;
+    color: #ffffff;
+}
+
+.sidebar-top-actions {
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: flex-start;
+}
+
+.sidebar-title-block {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid #d8e6ef;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f7fcf8 0%, #ffffff 100%);
+}
+
+.sidebar-title-block h1 {
+    margin: 0;
+    font-family: "Space Grotesk", "Source Sans 3", sans-serif;
+    font-size: 1.15rem;
+    color: #17384d;
+}
+
+.sidebar-title-block p {
+    margin: 4px 0 0;
+    color: #42644f;
+    font-size: 0.9rem;
 }
 
 #imageArea {
     position: relative;
     transform-origin: top left;
+    z-index: 1;
 }
 
 #previewImage {
@@ -35,13 +84,30 @@ body {
 /* ====== SIDEBAR ====== */
 #sidebar {
     width: 22%;
-    min-width: 280px;
+    min-width: 320px;
     height: 100vh;
-    padding: 14px;
+    padding: 16px;
     overflow-y: auto;
-    background-color: #f4f4f4;
-    border-left: 2px solid #ddd;
+    background: linear-gradient(180deg, #fbfefb 0%, #f2f8f3 100%);
+    border-left: 1px solid #d6e3ed;
     box-sizing: border-box;
+}
+
+#controlsArea {
+    background: #ffffff;
+    border: 1px solid #d8e6ef;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 8px 20px rgba(23, 53, 73, 0.06);
+}
+
+#status {
+    border: 1px solid #d8e6ef;
+    border-radius: 10px;
+    background: #eef7ef;
+    padding: 9px 10px;
+    color: #2f5a3d;
+    font-weight: 600;
 }
 
 /* ====== DISABLED STATE ====== */
@@ -55,17 +121,18 @@ body {
 button.option-button {
     display: block;
     width: 100%;
-    padding: 8px;
+    padding: 10px;
     margin-bottom: 10px;
-    background-color: #007bff;
+    background-color: #2f7f49;
     color: white;
-    border: none;
-    border-radius: 4px;
+    border: 1px solid #2f7f49;
+    border-radius: 10px;
+    font-weight: 700;
     cursor: pointer;
 }
 
 button.option-button:hover {
-    background-color: #0056b3;
+    background-color: #25643a;
 }
 
 /* Make the "Save labels" button green */
@@ -79,15 +146,27 @@ button.option-button:hover {
 
 
 .label-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "select selector";
     align-items: center;
-    gap: 6px;
-    margin-bottom: 6px;
+    gap: 6px 10px;
+    margin-bottom: 8px;
+    padding: 8px 9px;
+    border: 1px solid #d8e6ef;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+.label-row.selected {
+    border-color: #9dc9aa;
+    background: #edf7ef;
+    box-shadow: inset 0 0 0 1px #c6e0ce;
 }
 
 .mini-btn {
-    font-size: 0.8em;
-    padding: 2px 6px;
+    font-size: 0.84em;
+    padding: 4px 8px;
 }
 
 .small-btn {
@@ -101,3 +180,38 @@ button.option-button:hover {
     margin: 0 0 0 8px;           /* space from "Labels" */
 }
 
+.label-select-btn {
+    grid-area: select;
+    border: 1px solid #b7cfe0;
+    background: #eef7ef;
+    border-radius: 8px;
+    color: #245638;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.label-select-btn:hover {
+    background: #dceddf;
+}
+
+.label-class-select {
+    grid-area: selector;
+    width: 100%;
+    border: 1px solid #c9dbe7;
+    border-radius: 8px;
+    padding: 5px 8px;
+    background: #fff;
+}
+
+.labels-empty {
+    color: #688191;
+    font-style: italic;
+    padding: 4px 2px;
+}
+
+@media (max-width: 980px) {
+    #sidebar {
+        min-width: 270px;
+        width: 32%;
+    }
+}

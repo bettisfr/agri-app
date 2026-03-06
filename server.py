@@ -86,6 +86,23 @@ def save_labels_to_json_for_image(filename: str, labels_list):
         json.dump(labels_list, f, indent=2)
 
 
+def labels_count_for_image(filename: str) -> int:
+    """
+    Count non-empty YOLO label lines for one image.
+    """
+    base, _ = os.path.splitext(filename)
+    labels_path = os.path.join(LABELS_DIR, base + ".txt")
+    if not os.path.exists(labels_path):
+        return 0
+
+    count = 0
+    with open(labels_path, "r") as lf:
+        for line in lf:
+            if line.strip():
+                count += 1
+    return count
+
+
 # ----------------------------------------------------------------------
 # EXIF helpers
 # ----------------------------------------------------------------------
@@ -472,6 +489,33 @@ def get_images():
             "shown_end": end_idx,
             "global_total": global_total,
             "global_labeled": global_labeled,
+        }
+    )
+
+
+@app.route("/image-status")
+def image_status():
+    """
+    Return labeling status for one image.
+
+    Query parameters:
+      - filename: image filename
+    """
+    filename_raw = request.args.get("filename", "")
+    filename = secure_filename(os.path.basename(filename_raw))
+    if not filename:
+        return jsonify({"status": "error", "message": "filename missing"}), 400
+
+    image_path = os.path.join(IMAGES_DIR, filename)
+    if not os.path.exists(image_path):
+        return jsonify({"status": "error", "message": "image not found"}), 404
+
+    return jsonify(
+        {
+            "status": "success",
+            "filename": filename,
+            "is_labeled": is_image_labeled(filename),
+            "labels_count": labels_count_for_image(filename),
         }
     )
 

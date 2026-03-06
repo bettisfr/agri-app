@@ -12,8 +12,98 @@ const galleryState = {
     shownStart: 0,
     shownEnd: 0,
     globalTotal: 0,
-    globalLabeled: 0
+    globalLabeled: 0,
+    activeLabelerFilename: null
 };
+
+function buildMetadataHTML(imageData) {
+    const labeledText = imageData.is_labeled ? 'Labeled' : 'To label';
+    const labeledClass = imageData.is_labeled ? 'ok' : 'todo';
+    return `
+        <div class="gallery-meta-name">${imageData.filename}</div>
+        <div class="gallery-meta-row">
+            <span><strong>${imageData.labels_count ?? 0}</strong> labels</span>
+            <span class="gallery-meta-pill ${labeledClass}">${labeledText}</span>
+        </div>
+    `;
+}
+
+function openLabelerModal(filename) {
+    const overlay = document.getElementById('labelerModalOverlay');
+    const frame = document.getElementById('labelerModalFrame');
+    const fullscreenBtn = document.getElementById('labelerModalFullscreenBtn');
+    if (!overlay || !frame) {
+        window.location.href = `/label?image=${encodeURIComponent(filename)}`;
+        return;
+    }
+
+    overlay.classList.remove('fullscreen');
+    if (fullscreenBtn) {
+        fullscreenBtn.textContent = 'Full screen';
+    }
+    galleryState.activeLabelerFilename = filename;
+    frame.src = `/label?image=${encodeURIComponent(filename)}`;
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeLabelerModal() {
+    const overlay = document.getElementById('labelerModalOverlay');
+    const frame = document.getElementById('labelerModalFrame');
+    const fullscreenBtn = document.getElementById('labelerModalFullscreenBtn');
+    if (!overlay || !frame) return;
+    const wasOpen = overlay.classList.contains('open');
+    overlay.classList.remove('open');
+    overlay.classList.remove('fullscreen');
+    if (fullscreenBtn) {
+        fullscreenBtn.textContent = 'Full screen';
+    }
+    frame.src = 'about:blank';
+    document.body.style.overflow = '';
+    if (wasOpen) {
+        refreshSingleImageCard(galleryState.activeLabelerFilename);
+    }
+    galleryState.activeLabelerFilename = null;
+}
+
+async function refreshSingleImageCard(filename) {
+    if (!filename) return;
+    const findCardByFilename = (name) => {
+        const cards = document.querySelectorAll('.gallery-item[data-filename]');
+        for (const c of cards) {
+            if (c.dataset.filename === name) return c;
+        }
+        return null;
+    };
+
+    const delays = [0, 250, 700, 1300];
+    for (const delayMs of delays) {
+        if (delayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+        try {
+            const res = await fetch(`/image-status?filename=${encodeURIComponent(filename)}`);
+            if (!res.ok) continue;
+            const data = await res.json();
+            if (data.status !== 'success') continue;
+
+            const card = findCardByFilename(data.filename);
+            if (!card) return;
+
+            const metadataDiv = card.querySelector('.image-metadata');
+            if (!metadataDiv) return;
+
+            metadataDiv.innerHTML = buildMetadataHTML({
+                filename: data.filename,
+                labels_count: data.labels_count,
+                is_labeled: data.is_labeled
+            });
+            return;
+        } catch (err) {
+            console.warn('refreshSingleImageCard attempt failed:', err);
+        }
+    }
+}
 
 function applyGalleryColumns(value) {
     if (!gallery) return;
@@ -205,6 +295,7 @@ function addImageToGallery(imageData, isRealTime = true) {
 
     const div = document.createElement('div');
     div.classList.add('col', 'gallery-item');   // add gallery-item for CSS positioning
+    div.dataset.filename = imageData.filename;
 
     // ---- delete button (top-right X) ----
     const deleteBtn = document.createElement('button');
@@ -248,26 +339,15 @@ function addImageToGallery(imageData, isRealTime = true) {
     img.style.visibility = 'hidden';
 
     // When clicking the image (or the whole div), open labeler
-    const labelerUrl = `/label?image=${encodeURIComponent(imageData.filename)}`;
-
     div.style.cursor = 'pointer';
     div.addEventListener('click', () => {
-        window.open(labelerUrl, '_blank');
+        openLabelerModal(imageData.filename);
     });
 
     const metadataDiv = document.createElement('div');
     metadataDiv.classList.add('image-metadata');
 
-    const labeledText = imageData.is_labeled ? 'Labeled' : 'To label';
-    const labeledClass = imageData.is_labeled ? 'ok' : 'todo';
-
-    metadataDiv.innerHTML = `
-        <div class="gallery-meta-name">${imageData.filename}</div>
-        <div class="gallery-meta-row">
-            <span><strong>${imageData.labels_count ?? 0}</strong> labels</span>
-            <span class="gallery-meta-pill ${labeledClass}">${labeledText}</span>
-        </div>
-    `;
+    metadataDiv.innerHTML = buildMetadataHTML(imageData);
 
     // order: X button on top, then img, then metadata
     div.appendChild(deleteBtn);
@@ -328,6 +408,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const pageSizeSelect = document.getElementById('pageSizeSelect');
     const columnsSelect = document.getElementById('columnsSelect');
     const paginationControls = document.getElementById('paginationControls');
+    const labelerModalOverlay = document.getElementById('labelerModalOverlay');
+    const labelerModalCloseBtn = document.getElementById('labelerModalCloseBtn');
+    const labelerModalFullscreenBtn = document.getElementById('labelerModalFullscreenBtn');
 
     if (filterInput) {
         // reload on typing (you can debounce later if needed)
@@ -370,6 +453,34 @@ document.addEventListener('DOMContentLoaded', () => {
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     }
+
+    if (labelerModalCloseBtn) {
+        labelerModalCloseBtn.addEventListener('click', () => {
+            closeLabelerModal();
+        });
+    }
+
+    if (labelerModalFullscreenBtn && labelerModalOverlay) {
+        labelerModalFullscreenBtn.addEventListener('click', () => {
+            const isFullscreen = labelerModalOverlay.classList.toggle('fullscreen');
+            labelerModalFullscreenBtn.textContent = isFullscreen ? 'Exit full screen' : 'Full screen';
+        });
+    }
+
+    if (labelerModalOverlay) {
+        labelerModalOverlay.addEventListener('click', (e) => {
+            if (e.target === labelerModalOverlay) {
+                closeLabelerModal();
+            }
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeLabelerModal();
+        }
+    });
+
 });
 
 

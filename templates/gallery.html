@@ -117,6 +117,20 @@
     </div>
 </div>
 
+<!-- Labeler fullscreen modal -->
+<div id="labelerModalOverlay" class="labeler-modal-overlay">
+    <div class="labeler-modal-shell" role="dialog" aria-modal="true" aria-labelledby="labelerModalTitle">
+        <div class="labeler-modal-header">
+            <h3 id="labelerModalTitle">Label Image</h3>
+            <div class="labeler-modal-header-actions">
+                <button id="labelerModalFullscreenBtn" class="labeler-modal-close-btn" aria-label="Toggle full screen">Full screen</button>
+                <button id="labelerModalCloseBtn" class="labeler-modal-close-btn" aria-label="Close labeler">Close</button>
+            </div>
+        </div>
+        <iframe id="labelerModalFrame" title="Labeler" loading="lazy"></iframe>
+    </div>
+</div>
+
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.4.0/dist/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='script.js') }}"></script>
