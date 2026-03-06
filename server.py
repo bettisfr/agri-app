@@ -10,7 +10,7 @@ import piexif
 import datetime  # needed for timestamp parsing
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet')
+socketio = SocketIO(app, async_mode='threading')
 
 # ----------------------------------------------------------------------
 # Configuration
@@ -45,6 +45,45 @@ def is_image_labeled(filename: str) -> bool:
     """
     jpath = json_path_for_image(filename)
     return os.path.exists(jpath) and os.path.getsize(jpath) > 0
+
+
+def yolo_txt_path_for_image(filename: str) -> str:
+    """
+    Path of the YOLO txt file for this image.
+    E.g. azz2.jpg -> labels/azz2.txt
+    """
+    base, _ = os.path.splitext(filename)
+    return os.path.join(LABELS_DIR, base + ".txt")
+
+
+def load_labels_from_json_for_image(filename: str):
+    """
+    Load per-image labels from jsons/<stem>.json.
+
+    Returns:
+        list of label dicts or None if file missing/invalid.
+    """
+    jpath = json_path_for_image(filename)
+    if not os.path.exists(jpath) or os.path.getsize(jpath) == 0:
+        return None
+
+    try:
+        with open(jpath, "r") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+        return None
+    except Exception:
+        return None
+
+
+def save_labels_to_json_for_image(filename: str, labels_list):
+    """
+    Save per-image labels to jsons/<stem>.json.
+    """
+    jpath = json_path_for_image(filename)
+    with open(jpath, "w") as f:
+        json.dump(labels_list, f, indent=2)
 
 
 # ----------------------------------------------------------------------
@@ -87,7 +126,7 @@ def get_sorted_images(image_folder):
     (e.g., 2023-07-20T20-19-46+0200_...), newest first.
     If parsing fails, fall back to file modification time.
     Image files: *.jpg, *.jpeg in IMAGES_DIR
-    Label files: same base name, *.txt in LABELS_DIR
+    Label files are processed later in paginated endpoint for performance.
     """
 
     def parse_timestamp_from_filename(filename: str, file_path: str) -> float:
@@ -124,22 +163,11 @@ def get_sorted_images(image_folder):
 
         metadata = extract_metadata(file_path)
 
-        # Count labels, if a corresponding .txt exists in LABELS_DIR
-        base_name, _ = os.path.splitext(image)
-        labels_path = os.path.join(LABELS_DIR, base_name + ".txt")
-        labels_count = 0
-        if os.path.exists(labels_path):
-            with open(labels_path, "r") as lf:
-                for line in lf:
-                    if line.strip():
-                        labels_count += 1
-
         image_files_with_metadata.append(
             {
                 "filename": image,
                 "upload_ts": sort_ts,   # numeric timestamp used for sorting
                 "metadata": metadata,
-                "labels_count": labels_count,
             }
         )
 
@@ -168,6 +196,159 @@ def index():
 @app.route("/gallery")
 def gallery():
     return render_template("gallery.html")
+
+
+@app.route("/label")
+def label_page():
+    """Render the labeler UI for a given image (?image=...)."""
+    image_name = request.args.get("image")
+    if not image_name:
+        return "Missing 'image' parameter", 400
+    return render_template("labeler.html", image_name=image_name)
+
+
+@app.route("/get_labels")
+def get_labels():
+    """
+    Return all boxes for an image.
+
+    Priority:
+    1) If per-image jsons/<stem>.json exists -> use that (authoritative).
+    2) Else, if YOLO txt exists -> load those as is_tp = True.
+    """
+    image_name = request.args.get("image")
+    if not image_name:
+        return jsonify({"status": "error", "message": "Missing 'image' parameter"}), 400
+
+    labels_out = []
+
+    entry = load_labels_from_json_for_image(image_name)
+    if isinstance(entry, list):
+        for l in entry:
+            try:
+                cls = int(l["cls"])
+                xc = float(l["x_center"])
+                yc = float(l["y_center"])
+                w = float(l["width"])
+                h = float(l["height"])
+            except (KeyError, ValueError, TypeError):
+                continue
+
+            is_tp = bool(l.get("is_tp", True))
+            labels_out.append(
+                {
+                    "cls": cls,
+                    "x_center": xc,
+                    "y_center": yc,
+                    "width": w,
+                    "height": h,
+                    "is_tp": is_tp,
+                }
+            )
+    else:
+        txt_path = yolo_txt_path_for_image(image_name)
+        if os.path.exists(txt_path):
+            try:
+                with open(txt_path, "r") as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) != 5:
+                            continue
+                        cls_str, xc_str, yc_str, w_str, h_str = parts
+                        cls = int(float(cls_str))
+                        xc = float(xc_str)
+                        yc = float(yc_str)
+                        w = float(w_str)
+                        h = float(h_str)
+
+                        labels_out.append(
+                            {
+                                "cls": cls,
+                                "x_center": xc,
+                                "y_center": yc,
+                                "width": w,
+                                "height": h,
+                                "is_tp": True,
+                            }
+                        )
+            except Exception as e:
+                return jsonify({"status": "error", "message": f"Error reading YOLO txt: {e}"}), 500
+
+    return jsonify({"status": "success", "image": image_name, "labels": labels_out})
+
+
+@app.route("/save_labels", methods=["POST"])
+def save_labels():
+    """
+    Save labels for one image.
+
+    - jsons/<stem>.json: full boxes with is_tp (True/False).
+    - labels/<stem>.txt: only boxes with is_tp == True (YOLO format).
+    """
+    data = request.get_json(silent=True) or {}
+    image_name = data.get("image")
+    labels = data.get("labels", [])
+
+    if not image_name:
+        return jsonify({"status": "error", "message": "Missing 'image' field"}), 400
+
+    txt_path = yolo_txt_path_for_image(image_name)
+
+    yolo_lines = []
+    status_entry = []
+
+    for l in labels:
+        try:
+            cls = int(l["cls"])
+            xc = float(l["x_center"])
+            yc = float(l["y_center"])
+            w = float(l["width"])
+            h = float(l["height"])
+        except (KeyError, ValueError, TypeError):
+            continue
+
+        is_tp = l.get("is_tp")
+        if is_tp is None:
+            is_tp = True
+        is_tp = bool(is_tp)
+
+        status_entry.append(
+            {
+                "cls": cls,
+                "x_center": xc,
+                "y_center": yc,
+                "width": w,
+                "height": h,
+                "is_tp": is_tp,
+            }
+        )
+
+        if is_tp:
+            yolo_lines.append(f"{cls} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
+
+    try:
+        with open(txt_path, "w") as f:
+            if yolo_lines:
+                f.write("\n".join(yolo_lines) + "\n")
+            else:
+                f.write("")
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to write label txt: {e}"}), 500
+
+    try:
+        save_labels_to_json_for_image(image_name, status_entry)
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to write JSON: {e}"}), 500
+
+    kept = sum(1 for s in status_entry if s.get("is_tp", True))
+    total = len(status_entry)
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": f"Saved {kept} TP labels (out of {total} total boxes) for {image_name}.",
+        }
+    )
 
 
 @app.route("/receive", methods=["POST"])
@@ -217,33 +398,82 @@ def get_images():
 
     Query parameters:
       - filter: substring (case-insensitive) to match in filename
-      - only_labeled: if true/1/yes/on → keep only NON-labeled images
+      - only_labeled: if true/1/yes/on -> keep only NON-labeled images
                       (as per your latest semantics)
+      - page: 1-based page number (default 1)
+      - page_size: page size (default 24, max 200)
     """
-    # read query params
     filter_str = request.args.get("filter", "").strip().lower()
     only_labeled_raw = request.args.get("only_labeled", "false").strip().lower()
     only_labeled = only_labeled_raw in ("1", "true", "yes", "on")
+    page_raw = request.args.get("page", "1").strip()
+    page_size_raw = request.args.get("page_size", "24").strip()
+
+    try:
+        page = int(page_raw)
+    except ValueError:
+        page = 1
+
+    try:
+        page_size = int(page_size_raw)
+    except ValueError:
+        page_size = 24
+
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 200))
 
     images = get_sorted_images(IMAGES_DIR)
 
-    # add is_labeled flag to each image (based on per-image json)
     for img in images:
         fname = img.get("filename")
         img["is_labeled"] = is_image_labeled(fname)
 
-    # apply filename filter (if any)
+    global_total = len(images)
+    global_labeled = sum(1 for img in images if img.get("is_labeled"))
+
     if filter_str:
         images = [
             img for img in images
             if filter_str in img["filename"].lower()
         ]
 
-    # apply "only non labeled" filter (as per your previous logic)
-    if only_labeled:  # interpreted as: only NON-labeled
+    if only_labeled:
         images = [img for img in images if not img.get("is_labeled")]
 
-    return jsonify(images)
+    total_items = len(images)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+
+    start_idx = (page - 1) * page_size
+    end_idx = min(start_idx + page_size, total_items)
+    page_items = images[start_idx:end_idx]
+
+    # Compute labels count only for the current page to keep large datasets responsive.
+    for img in page_items:
+        base_name, _ = os.path.splitext(img["filename"])
+        labels_path = os.path.join(LABELS_DIR, base_name + ".txt")
+        labels_count = 0
+        if os.path.exists(labels_path):
+            with open(labels_path, "r") as lf:
+                for line in lf:
+                    if line.strip():
+                        labels_count += 1
+        img["labels_count"] = labels_count
+
+    return jsonify(
+        {
+            "items": page_items,
+            "page": page,
+            "page_size": page_size,
+            "total_items": total_items,
+            "total_pages": total_pages,
+            "shown_start": (start_idx + 1) if total_items > 0 else 0,
+            "shown_end": end_idx,
+            "global_total": global_total,
+            "global_labeled": global_labeled,
+        }
+    )
 
 
 @app.route("/delete-image", methods=["POST"])
@@ -340,9 +570,74 @@ def download_dataset():
         memory_file,
         mimetype="application/zip",
         as_attachment=True,
-        download_name="insectpi_dataset.zip",
+        download_name="agriapp_dataset.zip",
+    )
+
+
+@app.route("/download-dataset-selected", methods=["POST"])
+def download_dataset_selected():
+    """
+    Create a zip on the fly containing only selected images and their related
+    labels/json files.
+    Expects JSON body:
+      { "filenames": ["img_001.jpg", ...] }
+    """
+    data = request.get_json(silent=True) or {}
+    filenames = data.get("filenames", [])
+    if not isinstance(filenames, list):
+        return jsonify({"error": "filenames must be a list"}), 400
+
+    clean_names = []
+    for raw in filenames:
+        if not isinstance(raw, str):
+            continue
+        fname = secure_filename(os.path.basename(raw))
+        if not fname:
+            continue
+        clean_names.append(fname)
+
+    # Preserve order and remove duplicates
+    clean_names = list(dict.fromkeys(clean_names))
+    if not clean_names:
+        return jsonify({"error": "No valid filenames provided"}), 400
+
+    memory_file = io.BytesIO()
+    written = {"images": 0, "labels": 0, "jsons": 0}
+
+    with zipfile.ZipFile(
+        memory_file, mode="w", compression=zipfile.ZIP_DEFLATED
+    ) as zf:
+        for fname in clean_names:
+            image_path = os.path.join(IMAGES_DIR, fname)
+            if not os.path.exists(image_path):
+                continue
+
+            zf.write(image_path, os.path.join("images", fname))
+            written["images"] += 1
+
+            stem, _ = os.path.splitext(fname)
+
+            label_path = os.path.join(LABELS_DIR, stem + ".txt")
+            if os.path.exists(label_path):
+                zf.write(label_path, os.path.join("labels", stem + ".txt"))
+                written["labels"] += 1
+
+            json_path = os.path.join(JSONS_DIR, stem + ".json")
+            if os.path.exists(json_path):
+                zf.write(json_path, os.path.join("jsons", stem + ".json"))
+                written["jsons"] += 1
+
+    if written["images"] == 0:
+        return jsonify({"error": "No matching images found"}), 404
+
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="agriapp_dataset_visible.zip",
     )
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False, use_reloader=False)

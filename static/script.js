@@ -3,13 +3,82 @@ const gallery = document.querySelector('#gallery');  // Select gallery container
 
 // NEW: base path now points to images/ subfolder
 const STATIC_UPLOADS_BASE = "/static/uploads/images";
+const galleryState = {
+    pageImages: [],
+    currentPage: 1,
+    pageSize: 24,
+    totalItems: 0,
+    totalPages: 1,
+    shownStart: 0,
+    shownEnd: 0,
+    globalTotal: 0,
+    globalLabeled: 0
+};
+
+function applyGalleryColumns(value) {
+    if (!gallery) return;
+    if (!value || value === 'auto') {
+        gallery.classList.remove('manual-cols');
+        gallery.style.removeProperty('--gallery-cols');
+        return;
+    }
+
+    const cols = parseInt(value, 10);
+    if (Number.isNaN(cols) || cols < 1) return;
+    gallery.classList.add('manual-cols');
+    gallery.style.setProperty('--gallery-cols', String(cols));
+}
+
+function confirmDeleteDialog(message) {
+    return new Promise((resolve) => {
+        const overlay = document.getElementById('confirmModalOverlay');
+        const messageEl = document.getElementById('confirmModalMessage');
+        const cancelBtn = document.getElementById('confirmModalCancel');
+        const deleteBtn = document.getElementById('confirmModalDelete');
+
+        if (!overlay || !messageEl || !cancelBtn || !deleteBtn) {
+            resolve(window.confirm(message));
+            return;
+        }
+
+        messageEl.textContent = message;
+        overlay.classList.add('open');
+        deleteBtn.focus();
+
+        let done = false;
+
+        const cleanup = (result) => {
+            if (done) return;
+            done = true;
+            overlay.classList.remove('open');
+            cancelBtn.removeEventListener('click', onCancel);
+            deleteBtn.removeEventListener('click', onConfirm);
+            overlay.removeEventListener('click', onBackdrop);
+            document.removeEventListener('keydown', onKeydown);
+            resolve(result);
+        };
+
+        const onCancel = () => cleanup(false);
+        const onConfirm = () => cleanup(true);
+        const onBackdrop = (e) => {
+            if (e.target === overlay) cleanup(false);
+        };
+        const onKeydown = (e) => {
+            if (e.key === 'Escape') cleanup(false);
+        };
+
+        cancelBtn.addEventListener('click', onCancel);
+        deleteBtn.addEventListener('click', onConfirm);
+        overlay.addEventListener('click', onBackdrop);
+        document.addEventListener('keydown', onKeydown);
+    });
+}
 
 // Fetch and display all images from the server
 function loadGalleryImages() {
     const filterInput = document.getElementById('filterInput');
     const onlyLabeledCheckbox = document.getElementById('onlyLabeledCheckbox');
 
-    let url = '/get-images';
     const params = [];
 
     if (filterInput && filterInput.value.trim() !== '') {
@@ -20,45 +89,114 @@ function loadGalleryImages() {
         params.push('only_labeled=1');  // means NON-labeled only (backend logic)
     }
 
-    if (params.length > 0) {
-        url += '?' + params.join('&');
-    }
+    params.push('page=' + galleryState.currentPage);
+    params.push('page_size=' + galleryState.pageSize);
 
+    const url = '/get-images?' + params.join('&');
     fetch(url)
-        .then(response => response.json())
-        .then(images => {
+    .then(response => response.json())
+    .then(data => {
+        galleryState.pageImages = Array.isArray(data.items) ? data.items : [];
+        galleryState.totalItems = Number.isFinite(data.total_items) ? data.total_items : galleryState.pageImages.length;
+        galleryState.totalPages = Number.isFinite(data.total_pages) ? data.total_pages : 1;
+        galleryState.currentPage = Number.isFinite(data.page) ? data.page : galleryState.currentPage;
+        galleryState.shownStart = Number.isFinite(data.shown_start) ? data.shown_start : 0;
+        galleryState.shownEnd = Number.isFinite(data.shown_end) ? data.shown_end : galleryState.pageImages.length;
+        galleryState.globalTotal = Number.isFinite(data.global_total) ? data.global_total : galleryState.totalItems;
+        galleryState.globalLabeled = Number.isFinite(data.global_labeled) ? data.global_labeled : 0;
 
-            // --- Compute global stats (unfiltered) ---
-            return fetch('/get-images')
-                .then(res => res.json())
-                .then(allImages => {
-                    const total = allImages.length;
-                    const labeled = allImages.filter(img => img.is_labeled).length;
-                    const shown = images.length;
-
-                    const counter = document.getElementById('labeledCounter');
-                    if (counter) {
-                        counter.textContent = `${labeled} / ${total} labeled (shown ${shown})`;
-                    }
-
-                    return images;
-                });
-        })
-        .then(images => {
-            console.log("Fetched images (filtered):", images);
-
-            // OPTIONAL: backend already returns them sorted by timestamp
-            // If you prefer that order, comment out the next line.
-            // images.sort((a, b) => b.filename.localeCompare(a.filename));
-
-            gallery.innerHTML = "";
-
-            images.forEach(imageData => {
-                addImageToGallery(imageData, false);
-            });
-        });
+        const counter = document.getElementById('labeledCounter');
+        if (counter) {
+            counter.textContent = `${galleryState.globalLabeled} / ${galleryState.globalTotal} labeled (shown ${galleryState.totalItems})`;
+        }
+        renderCurrentPage();
+    });
 }
 
+function buildPageTokens(totalPages, currentPage) {
+    if (totalPages <= 7) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    const pages = new Set([1, totalPages, currentPage, currentPage - 1, currentPage + 1]);
+    if (currentPage <= 3) {
+        pages.add(2);
+        pages.add(3);
+    }
+    if (currentPage >= totalPages - 2) {
+        pages.add(totalPages - 1);
+        pages.add(totalPages - 2);
+    }
+
+    const sorted = [...pages]
+        .filter(p => p >= 1 && p <= totalPages)
+        .sort((a, b) => a - b);
+
+    const tokens = [];
+    for (let i = 0; i < sorted.length; i++) {
+        const page = sorted[i];
+        const prev = sorted[i - 1];
+        if (prev && page - prev > 1) tokens.push('...');
+        tokens.push(page);
+    }
+    return tokens;
+}
+
+function renderCurrentPage() {
+    const paginationInfo = document.getElementById('paginationInfo');
+    const paginationControls = document.getElementById('paginationControls');
+    const totalItems = galleryState.totalItems;
+    const totalPages = galleryState.totalPages;
+
+    gallery.innerHTML = "";
+    galleryState.pageImages.forEach(imageData => addImageToGallery(imageData, false));
+
+    if (paginationInfo) {
+        if (totalItems === 0) {
+            paginationInfo.textContent = "No images to show";
+        } else {
+            paginationInfo.textContent = `Showing ${galleryState.shownStart}-${galleryState.shownEnd} of ${totalItems}`;
+        }
+    }
+
+    if (!paginationControls) return;
+    paginationControls.innerHTML = "";
+    if (totalItems === 0 || totalPages <= 1) return;
+
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'gallery-page-btn';
+    prevBtn.textContent = 'Prev';
+    prevBtn.disabled = galleryState.currentPage === 1;
+    prevBtn.dataset.page = String(galleryState.currentPage - 1);
+    paginationControls.appendChild(prevBtn);
+
+    const tokens = buildPageTokens(totalPages, galleryState.currentPage);
+    tokens.forEach(token => {
+        if (token === '...') {
+            const dots = document.createElement('span');
+            dots.className = 'gallery-page-dots';
+            dots.textContent = '...';
+            paginationControls.appendChild(dots);
+            return;
+        }
+
+        const btn = document.createElement('button');
+        btn.className = 'gallery-page-btn';
+        btn.textContent = String(token);
+        btn.dataset.page = String(token);
+        if (token === galleryState.currentPage) {
+            btn.classList.add('active');
+        }
+        paginationControls.appendChild(btn);
+    });
+
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'gallery-page-btn';
+    nextBtn.textContent = 'Next';
+    nextBtn.disabled = galleryState.currentPage === totalPages;
+    nextBtn.dataset.page = String(galleryState.currentPage + 1);
+    paginationControls.appendChild(nextBtn);
+}
 
 
 // Add an image to the gallery with optional real-time effect
@@ -74,9 +212,11 @@ function addImageToGallery(imageData, isRealTime = true) {
     deleteBtn.textContent = '×';
 
     // do NOT open labeler when clicking X
-    deleteBtn.addEventListener('click', (e) => {
+    deleteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();   // prevent click from bubbling to div
-        const ok = confirm(`Delete image "${imageData.filename}" and its labels?`);
+        const ok = await confirmDeleteDialog(
+            `Delete image "${imageData.filename}" and its labels?`
+        );
         if (!ok) return;
 
         fetch('/delete-image', {
@@ -87,8 +227,7 @@ function addImageToGallery(imageData, isRealTime = true) {
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success' || data.status === 'partial') {
-                    // remove from DOM
-                    div.remove();
+                    loadGalleryImages();
                 } else {
                     alert('Delete failed: ' + (data.message || 'unknown error'));
                 }
@@ -109,8 +248,7 @@ function addImageToGallery(imageData, isRealTime = true) {
     img.style.visibility = 'hidden';
 
     // When clicking the image (or the whole div), open labeler
-    const host = window.location.hostname;
-    const labelerUrl = `http://${host}:5001/label?image=${encodeURIComponent(imageData.filename)}`;
+    const labelerUrl = `/label?image=${encodeURIComponent(imageData.filename)}`;
 
     div.style.cursor = 'pointer';
     div.addEventListener('click', () => {
@@ -120,14 +258,15 @@ function addImageToGallery(imageData, isRealTime = true) {
     const metadataDiv = document.createElement('div');
     metadataDiv.classList.add('image-metadata');
 
-    const labeledText = imageData.is_labeled
-        ? '🟩 labeled'
-        : '⬜ non-labeled';
+    const labeledText = imageData.is_labeled ? 'Labeled' : 'To label';
+    const labeledClass = imageData.is_labeled ? 'ok' : 'todo';
 
     metadataDiv.innerHTML = `
-        ${imageData.filename}
-        (<strong>Labels: ${imageData.labels_count ?? 0}</strong>)<br>
-        ${labeledText}
+        <div class="gallery-meta-name">${imageData.filename}</div>
+        <div class="gallery-meta-row">
+            <span><strong>${imageData.labels_count ?? 0}</strong> labels</span>
+            <span class="gallery-meta-pill ${labeledClass}">${labeledText}</span>
+        </div>
     `;
 
     // order: X button on top, then img, then metadata
@@ -145,26 +284,90 @@ function addImageToGallery(imageData, isRealTime = true) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    const btn = document.getElementById('downloadDatasetBtn');
-    if (btn) {
-        btn.addEventListener('click', () => {
+    const downloadAllBtn = document.getElementById('downloadDatasetAllBtn');
+    if (downloadAllBtn) {
+        downloadAllBtn.addEventListener('click', () => {
             window.location.href = '/download-dataset';
+        });
+    }
+    const downloadVisibleBtn = document.getElementById('downloadDatasetVisibleBtn');
+    if (downloadVisibleBtn) {
+        downloadVisibleBtn.addEventListener('click', async () => {
+            const filenames = galleryState.pageImages.map(img => img.filename);
+            if (filenames.length === 0) {
+                alert('No visible images to download.');
+                return;
+            }
+
+            const res = await fetch('/download-dataset-selected', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filenames })
+            });
+
+            if (!res.ok) {
+                const msg = await res.text();
+                alert('Download failed: ' + msg);
+                return;
+            }
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'agriapp_dataset_visible.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
         });
     }
 
     const filterInput = document.getElementById('filterInput');
     const onlyLabeledCheckbox = document.getElementById('onlyLabeledCheckbox');
+    const pageSizeSelect = document.getElementById('pageSizeSelect');
+    const columnsSelect = document.getElementById('columnsSelect');
+    const paginationControls = document.getElementById('paginationControls');
 
     if (filterInput) {
         // reload on typing (you can debounce later if needed)
         filterInput.addEventListener('input', () => {
+            galleryState.currentPage = 1;
             loadGalleryImages();
         });
     }
 
     if (onlyLabeledCheckbox) {
         onlyLabeledCheckbox.addEventListener('change', () => {
+            galleryState.currentPage = 1;
             loadGalleryImages();
+        });
+    }
+
+    if (pageSizeSelect) {
+        pageSizeSelect.addEventListener('change', () => {
+            galleryState.pageSize = parseInt(pageSizeSelect.value, 10) || 24;
+            galleryState.currentPage = 1;
+            loadGalleryImages();
+        });
+    }
+
+    if (columnsSelect) {
+        applyGalleryColumns(columnsSelect.value);
+        columnsSelect.addEventListener('change', () => {
+            applyGalleryColumns(columnsSelect.value);
+        });
+    }
+
+    if (paginationControls) {
+        paginationControls.addEventListener('click', (e) => {
+            const target = e.target.closest('button[data-page]');
+            if (!target || target.disabled) return;
+            const page = parseInt(target.dataset.page, 10);
+            if (Number.isNaN(page) || page < 1) return;
+            galleryState.currentPage = page;
+            loadGalleryImages();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     }
 });
@@ -187,20 +390,8 @@ function lazyLoadImage(img) {
 
 // Listen for real-time image uploads via WebSockets
 socket.on('new_image', (data) => {
-    addImageToGallery(data, true); // Add new image to gallery
+    loadGalleryImages();
 });
 
 // Load all images when the page loads
 loadGalleryImages();
-
-// Reload gallery when tab becomes visible again
-document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-        loadGalleryImages();
-    }
-});
-
-// Also reload when window gets focus
-window.addEventListener("focus", () => {
-    loadGalleryImages();
-});

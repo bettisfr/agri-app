@@ -6,23 +6,18 @@ source ~/insectenv/bin/activate
 # Move into the project
 cd ~/insect-cloud || exit
 
-echo "Starting Insect Cloud servers and client..."
+echo "Starting Insect Cloud server and client..."
 
 # Start picture server
-python server-picture.py &
+python server.py &
 PID1=$!
 
-# Start labeler server
-python server-labeler.py &
+# Start camera client
+python client.py &
 PID2=$!
 
-# Start GPIO/camera client (the button + GPS + BME280 script)
-python client.py &
-PID3=$!
-
-echo "server-picture.py PID: $PID1"
-echo "server-labeler.py PID: $PID2"
-echo "client.py PID (client): $PID3"
+echo "server.py PID: $PID1"
+echo "client.py PID (client): $PID2"
 
 # Keep script alive so children do not die
 wait

@@ -2,10 +2,8 @@ flask
 requests
 Pillow
 ultralytics
-gpiozero
 psutil
 memory-profiler
 pandas
 flask-socketio
-eventlet
 piexif

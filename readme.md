@@ -1,4 +1,4 @@
-# InsectPi: Raspberry Pi Camera with YOLO Detection and Web Gallery
+# AgriApp: Raspberry Pi Camera with YOLO Detection and Web Gallery
 
 This repository contains a complete client-server pipeline for remote wildlife/insect/environmental monitoring using Raspberry Pi cameras equipped with object detection, metadata enrichment, and gallery visualization.
 
@@ -47,7 +47,7 @@ Replace `<server-ip>` with the actual IP address or hostname of the server.
 
 ```bash
 pip install -r requirements.txt
-python server-picture.py
+python server.py
 ```
 
 ### 🍓 Raspberry Pi Client Setup

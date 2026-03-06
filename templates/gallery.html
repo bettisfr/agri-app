@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>InsectPi - Gallery</title>
+    <title>AgriApp - Gallery</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link href="{{ url_for('static', filename='styles.css') }}" rel="stylesheet">
 </head>
-<body>
+<body class="gallery-page">
 
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg navbar-light">
     <div class="container">
-        <a class="navbar-brand" href="/">🌿 InsectPi</a>
+        <a class="navbar-brand" href="/">🌿 AgriApp</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -28,27 +28,33 @@
 </nav>
 
 <!-- Gallery Section -->
-<div class="container my-5">
+<div class="container my-5 gallery-shell">
+    <section class="gallery-hero">
+        <div>
+            <p class="gallery-kicker">Field Capture Console</p>
+            <h1 class="section-title mb-0">Image Gallery</h1>
+            <p class="gallery-subtitle mb-0">Browse captures, review labels, and curate your dataset.</p>
+        </div>
+        <div class="gallery-hero-actions">
+            <button id="downloadDatasetAllBtn" class="btn-download-dataset">
+                Download all
+            </button>
+            <button id="downloadDatasetVisibleBtn" class="btn-download-dataset btn-download-secondary">
+                Download visible
+            </button>
+        </div>
+    </section>
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="section-title mb-0">Image Gallery</h1>
-
-        <button id="downloadDatasetBtn" class="btn btn-primary">
-            Download dataset (zip)
-        </button>
-    </div>
-
-    <!-- NEW FILTER BAR -->
-    <div class="row mb-4">
+    <section class="gallery-filter-card row mb-4">
         <div class="col-md-4">
             <input
                     type="text"
                     id="filterInput"
-                    class="form-control"
+                    class="form-control gallery-filter-input"
                     placeholder="Filter images..."
             >
         </div>
-        <div class="col-md-5 d-flex align-items-center">
+        <div class="col-md-4 d-flex align-items-center">
     <input
         type="checkbox"
         id="onlyLabeledCheckbox"
@@ -63,20 +69,53 @@
         0 / 0 labeled (shown 0)
     </span>
 </div>
-
-
-    </div>
-    <!-- END FILTER BAR -->
+        <div class="col-md-2 d-flex align-items-center justify-content-md-end mt-3 mt-md-0">
+            <label for="pageSizeSelect" class="me-2 mb-0">Per page</label>
+            <select id="pageSizeSelect" class="form-select form-select-sm gallery-page-size-select">
+                <option value="12">12</option>
+                <option value="24" selected>24</option>
+                <option value="48">48</option>
+                <option value="96">96</option>
+            </select>
+        </div>
+        <div class="col-md-2 d-flex align-items-center justify-content-md-end mt-3 mt-md-0">
+            <label for="columnsSelect" class="me-2 mb-0">Columns</label>
+            <select id="columnsSelect" class="form-select form-select-sm gallery-page-size-select">
+                <option value="auto" selected>Auto</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+            </select>
+        </div>
+    </section>
 
     <!-- Single gallery container -->
     <div id="gallery" class="row g-4 justify-content-center"></div>
+    <section class="gallery-pagination-wrap">
+        <div id="paginationInfo" class="gallery-pagination-info"></div>
+        <div id="paginationControls" class="gallery-pagination-controls"></div>
+    </section>
 </div>
 
 
 <!-- Footer -->
 <footer class="text-center py-3">
-    <p>© 2025 InsectPi | A Raspberry Pi based edge–cloud system for real-time insect species detection using YOLO</p>
+    <p>© 2025 AgriApp | A Raspberry Pi based edge–cloud system for real-time insect species detection using YOLO</p>
 </footer>
+
+<!-- Modern delete confirm modal -->
+<div id="confirmModalOverlay" class="confirm-modal-overlay">
+    <div class="confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+        <h3 id="confirmModalTitle" class="confirm-modal-title">Delete Image</h3>
+        <p id="confirmModalMessage" class="confirm-modal-message"></p>
+        <div class="confirm-modal-actions">
+            <button id="confirmModalCancel" class="confirm-btn confirm-btn-secondary">Cancel</button>
+            <button id="confirmModalDelete" class="confirm-btn confirm-btn-danger">Delete</button>
+        </div>
+    </div>
+</div>
 
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.4.0/dist/socket.io.min.js"></script>
