@@ -57,6 +57,21 @@ const zoomState = {
 const byId = (id) => document.getElementById(id);
 
 const uiList = {
+    updateTpFpSummary() {
+        const tpNode = byId("numTp");
+        const fpNode = byId("numFp");
+        if (!tpNode || !fpNode) return;
+
+        let tp = 0;
+        let fp = 0;
+        for (const lab of labels) {
+            if (lab && lab.is_tp === false) fp += 1;
+            else tp += 1;
+        }
+        tpNode.textContent = String(tp);
+        fpNode.textContent = String(fp);
+    },
+
     setStatus(msg, kind = "normal") {
         const statusNode = byId("status");
         if (!statusNode) return;
@@ -84,6 +99,7 @@ const uiList = {
         if (numLabels) {
             numLabels.textContent = labels.length;
         }
+        this.updateTpFpSummary();
 
         if (statusMessage) {
             this.setStatus(statusMessage);
@@ -97,6 +113,7 @@ const uiList = {
 
         if (!labels || labels.length === 0) {
             container.innerHTML = '<div class="labels-empty">(no labels)</div>';
+            this.updateTpFpSummary();
             return;
         }
 
@@ -148,6 +165,7 @@ const uiList = {
             row.appendChild(clsInput);
             container.appendChild(row);
         });
+        this.updateTpFpSummary();
     },
 };
 
@@ -849,6 +867,7 @@ const api = {
 
         if (imgName) imgName.textContent = filename;
         if (numLabels) numLabels.textContent = labels.length;
+        uiList.updateTpFpSummary();
         if (controls) controls.classList.remove("disabled");
 
         uiList.setStatus(`Loaded ${filename} (${labels.length} labels)`);

@@ -28,29 +28,6 @@ body {
     position: relative;
 }
 
-#backToGalleryBtn {
-    display: inline-block;
-    padding: 7px 12px;
-    border-radius: 999px;
-    border: 1px solid var(--ui-green);
-    background: #ffffff;
-    color: var(--ui-green);
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 600;
-}
-
-#backToGalleryBtn:hover {
-    background: var(--ui-green);
-    color: #ffffff;
-}
-
-.sidebar-top-actions {
-    margin-bottom: 12px;
-    display: flex;
-    justify-content: flex-start;
-}
-
 .sidebar-title-block {
     margin-bottom: 12px;
     padding: 10px 12px;
@@ -170,6 +147,18 @@ body {
     background: #e7f4ea;
     border: 1px solid #c9e2cf;
     color: #2f7f49;
+}
+
+.info-pill-tp {
+    background: #e7f4ea;
+    border-color: #c9e2cf;
+    color: #2f7f49;
+}
+
+.info-pill-fp {
+    background: #ffe7e7;
+    border-color: #f2bcbc;
+    color: #9b2f2f;
 }
 
 .labels-header {

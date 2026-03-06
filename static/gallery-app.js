@@ -40,7 +40,9 @@ const dom = {
     labelerOverlay: () => document.getElementById("labelerModalOverlay"),
     labelerFrame: () => document.getElementById("labelerModalFrame"),
     labelerCloseBtn: () => document.getElementById("labelerModalCloseBtn"),
-    labelerFullscreenBtn: () => document.getElementById("labelerModalFullscreenBtn"),
+    labelerPrevBtn: () => document.getElementById("labelerModalPrevBtn"),
+    labelerNextBtn: () => document.getElementById("labelerModalNextBtn"),
+    labelerStatusTag: () => document.getElementById("labelerModalStatusTag"),
     confirmOverlay: () => document.getElementById("confirmModalOverlay"),
     confirmMessage: () => document.getElementById("confirmModalMessage"),
     confirmCancel: () => document.getElementById("confirmModalCancel"),
@@ -117,31 +119,29 @@ function applyGalleryColumns(value) {
 function openLabelerModal(filename) {
     const overlay = dom.labelerOverlay();
     const frame = dom.labelerFrame();
-    const fullscreenBtn = dom.labelerFullscreenBtn();
 
     if (!overlay || !frame) {
         window.location.href = `${ROUTES.labelPage}?image=${encodeURIComponent(filename)}`;
         return;
     }
 
-    overlay.classList.remove("fullscreen");
-    if (fullscreenBtn) fullscreenBtn.textContent = "Full screen";
+    overlay.classList.add("fullscreen");
 
     galleryState.activeLabelerFilename = filename;
     frame.src = `${ROUTES.labelPage}?image=${encodeURIComponent(filename)}`;
     overlay.classList.add("open");
     document.body.style.overflow = "hidden";
+    updateModalNavigationButtons();
+    updateModalStatusTag();
 }
 
 function closeLabelerModal() {
     const overlay = dom.labelerOverlay();
     const frame = dom.labelerFrame();
-    const fullscreenBtn = dom.labelerFullscreenBtn();
     if (!overlay || !frame) return;
 
     const wasOpen = overlay.classList.contains("open");
     overlay.classList.remove("open", "fullscreen");
-    if (fullscreenBtn) fullscreenBtn.textContent = "Full screen";
 
     frame.src = "about:blank";
     document.body.style.overflow = "";
@@ -150,6 +150,53 @@ function closeLabelerModal() {
         refreshSingleImageCard(galleryState.activeLabelerFilename);
     }
     galleryState.activeLabelerFilename = null;
+    updateModalNavigationButtons();
+    updateModalStatusTag();
+}
+
+function getActiveModalIndex() {
+    if (!galleryState.activeLabelerFilename) return -1;
+    return galleryState.pageImages.findIndex((img) => img.filename === galleryState.activeLabelerFilename);
+}
+
+function navigateModalImage(direction) {
+    const idx = getActiveModalIndex();
+    if (idx < 0) return;
+
+    const nextIdx = idx + direction;
+    if (nextIdx < 0 || nextIdx >= galleryState.pageImages.length) return;
+
+    const nextImage = galleryState.pageImages[nextIdx];
+    if (!nextImage || !nextImage.filename) return;
+    openLabelerModal(nextImage.filename);
+}
+
+function updateModalNavigationButtons() {
+    const prevBtn = dom.labelerPrevBtn();
+    const nextBtn = dom.labelerNextBtn();
+    if (!prevBtn || !nextBtn) return;
+
+    const idx = getActiveModalIndex();
+    prevBtn.disabled = idx <= 0;
+    nextBtn.disabled = idx < 0 || idx >= galleryState.pageImages.length - 1;
+}
+
+function updateModalStatusTag() {
+    const statusTag = dom.labelerStatusTag();
+    if (!statusTag) return;
+
+    const idx = getActiveModalIndex();
+    if (idx < 0) {
+        statusTag.textContent = "";
+        statusTag.classList.remove("ok", "todo");
+        return;
+    }
+
+    const imageData = galleryState.pageImages[idx];
+    const isLabeled = !!imageData?.is_labeled;
+    statusTag.textContent = isLabeled ? "Labeled" : "To label";
+    statusTag.classList.toggle("ok", isLabeled);
+    statusTag.classList.toggle("todo", !isLabeled);
 }
 
 async function refreshSingleImageCard(filename) {
@@ -179,6 +226,12 @@ async function refreshSingleImageCard(filename) {
                 labels_count: data.labels_count,
                 is_labeled: data.is_labeled,
             });
+            const stateItem = galleryState.pageImages.find((img) => img.filename === data.filename);
+            if (stateItem) {
+                stateItem.labels_count = data.labels_count;
+                stateItem.is_labeled = data.is_labeled;
+            }
+            updateModalStatusTag();
             return;
         } catch (err) {
             console.warn("refreshSingleImageCard attempt failed:", err);
@@ -392,6 +445,8 @@ function renderCurrentPage() {
     gallery.innerHTML = "";
     galleryState.pageImages.forEach((imageData) => addImageToGallery(imageData, false));
     renderPagination();
+    updateModalNavigationButtons();
+    updateModalStatusTag();
 }
 
 function applyGalleryResponse(data) {
@@ -519,19 +574,19 @@ function bindControls() {
     }
 
     const labelerCloseBtn = dom.labelerCloseBtn();
+    const labelerPrevBtn = dom.labelerPrevBtn();
+    const labelerNextBtn = dom.labelerNextBtn();
     if (labelerCloseBtn) {
         labelerCloseBtn.addEventListener("click", closeLabelerModal);
     }
-
-    const labelerOverlay = dom.labelerOverlay();
-    const labelerFullscreenBtn = dom.labelerFullscreenBtn();
-    if (labelerOverlay && labelerFullscreenBtn) {
-        labelerFullscreenBtn.addEventListener("click", () => {
-            const isFullscreen = labelerOverlay.classList.toggle("fullscreen");
-            labelerFullscreenBtn.textContent = isFullscreen ? "Exit full screen" : "Full screen";
-        });
+    if (labelerPrevBtn) {
+        labelerPrevBtn.addEventListener("click", () => navigateModalImage(-1));
+    }
+    if (labelerNextBtn) {
+        labelerNextBtn.addEventListener("click", () => navigateModalImage(1));
     }
 
+    const labelerOverlay = dom.labelerOverlay();
     if (labelerOverlay) {
         labelerOverlay.addEventListener("click", (e) => {
             if (e.target === labelerOverlay) closeLabelerModal();
@@ -539,7 +594,10 @@ function bindControls() {
     }
 
     document.addEventListener("keydown", (e) => {
+        if (!galleryState.activeLabelerFilename) return;
         if (e.key === "Escape") closeLabelerModal();
+        if (e.key === "ArrowLeft") navigateModalImage(-1);
+        if (e.key === "ArrowRight") navigateModalImage(1);
     });
 }
 
