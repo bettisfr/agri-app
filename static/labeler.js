@@ -14,7 +14,7 @@ const DEL_PAD = 6;     // slightly more spacing
 const STATIC_UPLOADS_BASE = "/static/uploads/images";
 const LABEL_ALPHA = 0.0;   // 0 = fully transparent, 1 = fully opaque
 
-const APP = 1; // 0 = bugs, 1 = insects
+const APP = 0; // 0 = bugs (cimici), 1 = insects
 
 // -------------------- CLASS DEFINITIONS --------------------
 let CLASS_DEFS;
@@ -77,6 +77,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (saveBtn) {
         saveBtn.addEventListener("click", () => {
             saveLabels();
+        });
+    }
+
+    const downloadBtn = document.getElementById("downloadCurrentBtn");
+    if (downloadBtn) {
+        downloadBtn.addEventListener("click", () => {
+            if (!currentImage || !currentImage.name) {
+                setStatus("No image loaded, cannot download.", "error");
+                return;
+            }
+            const url = `/download-image-with-labels?image=${encodeURIComponent(currentImage.name)}`;
+            window.location.href = url;
         });
     }
 

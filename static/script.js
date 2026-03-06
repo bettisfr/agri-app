@@ -167,7 +167,7 @@ function confirmDeleteDialog(message) {
 // Fetch and display all images from the server
 function loadGalleryImages() {
     const filterInput = document.getElementById('filterInput');
-    const onlyLabeledCheckbox = document.getElementById('onlyLabeledCheckbox');
+    const selectedLabeledFilter = document.querySelector('input[name="labeledFilter"]:checked');
 
     const params = [];
 
@@ -175,8 +175,11 @@ function loadGalleryImages() {
         params.push('filter=' + encodeURIComponent(filterInput.value.trim()));
     }
 
-    if (onlyLabeledCheckbox && onlyLabeledCheckbox.checked) {
-        params.push('only_labeled=1');  // means NON-labeled only (backend logic)
+    const filterValue = selectedLabeledFilter ? selectedLabeledFilter.value : 'all';
+    if (filterValue === 'non_labeled') {
+        params.push('only_labeled=1');
+    } else if (filterValue === 'labeled') {
+        params.push('labeled_only=1');
     }
 
     params.push('page=' + galleryState.currentPage);
@@ -404,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const filterInput = document.getElementById('filterInput');
-    const onlyLabeledCheckbox = document.getElementById('onlyLabeledCheckbox');
+    const labeledFilterRadios = document.querySelectorAll('input[name="labeledFilter"]');
     const pageSizeSelect = document.getElementById('pageSizeSelect');
     const columnsSelect = document.getElementById('columnsSelect');
     const paginationControls = document.getElementById('paginationControls');
@@ -420,10 +423,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (onlyLabeledCheckbox) {
-        onlyLabeledCheckbox.addEventListener('change', () => {
-            galleryState.currentPage = 1;
-            loadGalleryImages();
+    if (labeledFilterRadios && labeledFilterRadios.length > 0) {
+        labeledFilterRadios.forEach((radio) => {
+            radio.addEventListener('change', () => {
+                galleryState.currentPage = 1;
+                loadGalleryImages();
+            });
         });
     }
 

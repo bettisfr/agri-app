@@ -54,21 +54,47 @@
                     placeholder="Filter images..."
             >
         </div>
-        <div class="col-md-4 d-flex align-items-center">
-    <input
-        type="checkbox"
-        id="onlyLabeledCheckbox"
-        class="form-check-input me-2"
-    >
-    <label for="onlyLabeledCheckbox" class="form-check-label me-3">
-        Non labeled only
-    </label>
+        <div class="col-md-4 gallery-toggle-col">
+            <div class="gallery-toggle-row">
+                <label for="labeledFilterAll" class="gallery-toggle-chip">
+                    <input
+                        type="radio"
+                        id="labeledFilterAll"
+                        name="labeledFilter"
+                        value="all"
+                        class="form-check-input"
+                        checked
+                    >
+                    <span>All</span>
+                </label>
 
-    <!-- NEW: labeled + shown counter -->
-    <span id="labeledCounter" class="text-muted" style="font-size:0.9em;">
-        0 / 0 labeled (shown 0)
-    </span>
-</div>
+                <label for="onlyLabeledCheckbox" class="gallery-toggle-chip">
+                    <input
+                        type="radio"
+                        id="onlyLabeledCheckbox"
+                        name="labeledFilter"
+                        value="non_labeled"
+                        class="form-check-input"
+                    >
+                    <span>Non labeled</span>
+                </label>
+
+                <label for="labeledOnlyCheckbox" class="gallery-toggle-chip">
+                    <input
+                        type="radio"
+                        id="labeledOnlyCheckbox"
+                        name="labeledFilter"
+                        value="labeled"
+                        class="form-check-input"
+                    >
+                    <span>Labeled</span>
+                </label>
+            </div>
+
+            <div id="labeledCounter" class="gallery-counter-text">
+                0 / 0 labeled (shown 0)
+            </div>
+        </div>
         <div class="col-md-2 d-flex align-items-center justify-content-md-end mt-3 mt-md-0">
             <label for="pageSizeSelect" class="me-2 mb-0">Per page</label>
             <select id="pageSizeSelect" class="form-select form-select-sm gallery-page-size-select">
@@ -102,7 +128,7 @@
 
 <!-- Footer -->
 <footer class="text-center py-3">
-    <p>© 2025 AgriApp | A Raspberry Pi based edge–cloud system for real-time insect species detection using YOLO</p>
+    <p>© 2026 AgriApp | A Raspberry Pi based edge–cloud system for real-time insect species detection using YOLO</p>
 </footer>
 
 <!-- Modern delete confirm modal -->

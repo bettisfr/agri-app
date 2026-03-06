@@ -41,10 +41,19 @@ def json_path_for_image(filename: str) -> str:
 
 def is_image_labeled(filename: str) -> bool:
     """
-    An image is considered 'labeled' if a non-empty jsons/<stem>.json exists.
+    An image is considered 'labeled' only if jsons/<stem>.json contains
+    at least one label entry.
     """
     jpath = json_path_for_image(filename)
-    return os.path.exists(jpath) and os.path.getsize(jpath) > 0
+    if not os.path.exists(jpath) or os.path.getsize(jpath) == 0:
+        return False
+
+    try:
+        with open(jpath, "r") as f:
+            data = json.load(f)
+        return isinstance(data, list) and len(data) > 0
+    except Exception:
+        return False
 
 
 def yolo_txt_path_for_image(filename: str) -> str:
@@ -417,12 +426,15 @@ def get_images():
       - filter: substring (case-insensitive) to match in filename
       - only_labeled: if true/1/yes/on -> keep only NON-labeled images
                       (as per your latest semantics)
+      - labeled_only: if true/1/yes/on -> keep only labeled images
       - page: 1-based page number (default 1)
       - page_size: page size (default 24, max 200)
     """
     filter_str = request.args.get("filter", "").strip().lower()
     only_labeled_raw = request.args.get("only_labeled", "false").strip().lower()
     only_labeled = only_labeled_raw in ("1", "true", "yes", "on")
+    labeled_only_raw = request.args.get("labeled_only", "false").strip().lower()
+    labeled_only = labeled_only_raw in ("1", "true", "yes", "on")
     page_raw = request.args.get("page", "1").strip()
     page_size_raw = request.args.get("page_size", "24").strip()
 
@@ -456,6 +468,9 @@ def get_images():
 
     if only_labeled:
         images = [img for img in images if not img.get("is_labeled")]
+
+    if labeled_only:
+        images = [img for img in images if img.get("is_labeled")]
 
     total_items = len(images)
     total_pages = max(1, (total_items + page_size - 1) // page_size)
@@ -680,6 +695,46 @@ def download_dataset_selected():
         mimetype="application/zip",
         as_attachment=True,
         download_name="agriapp_dataset_visible.zip",
+    )
+
+
+@app.route("/download-image-with-labels")
+def download_image_with_labels():
+    """
+    Download a zip containing one image and its related label/json files.
+
+    Query parameters:
+      - image: image filename
+    """
+    image_raw = request.args.get("image", "")
+    filename = secure_filename(os.path.basename(image_raw))
+    if not filename:
+        return jsonify({"error": "image parameter missing"}), 400
+
+    image_path = os.path.join(IMAGES_DIR, filename)
+    if not os.path.exists(image_path):
+        return jsonify({"error": "image not found"}), 404
+
+    stem, _ = os.path.splitext(filename)
+    label_path = os.path.join(LABELS_DIR, stem + ".txt")
+    json_path = os.path.join(JSONS_DIR, stem + ".json")
+
+    memory_file = io.BytesIO()
+    with zipfile.ZipFile(
+        memory_file, mode="w", compression=zipfile.ZIP_DEFLATED
+    ) as zf:
+        zf.write(image_path, os.path.join("images", filename))
+        if os.path.exists(label_path):
+            zf.write(label_path, os.path.join("labels", stem + ".txt"))
+        if os.path.exists(json_path):
+            zf.write(json_path, os.path.join("jsons", stem + ".json"))
+
+    memory_file.seek(0)
+    return send_file(
+        memory_file,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{stem}_labels_bundle.zip",
     )
 
 

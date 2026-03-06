@@ -31,23 +31,28 @@
             </div>
             <div id="status">Waiting for image parameter (?image=...).</div>
 
-            <section id="info" style="margin-top:10px;">
-                <p><b>File:</b> <span id="imgName">—</span></p>
-                <p><b>Labels:</b> <span id="numLabels">—</span></p>
+            <section id="info" class="sidebar-card">
+                <div class="info-row">
+                    <span class="info-label">File</span>
+                    <span id="imgName" class="info-value">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Labels</span>
+                    <span id="numLabels" class="info-value info-pill">—</span>
+                </div>
             </section>
 
-            <hr>
-
-            <section id="labelsPanel">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
+            <section id="labelsPanel" class="sidebar-card">
+                <div class="labels-header">
                     <strong>Labels</strong>
                 </div>
 
-                <div id="labelsList" style="margin-top:10px;"></div>
+                <div id="labelsList"></div>
             </section>
 
-            <div style="margin-top:12px;">
+            <div class="sidebar-actions">
                 <button id="saveTxtBtn" class="option-button">Save labels</button>
+                <button id="downloadCurrentBtn" class="option-button option-button-secondary">Download image + labels</button>
             </div>
 
         </div>
