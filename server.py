@@ -7,6 +7,8 @@ import zipfile
 import time
 import json
 import datetime  # needed for timestamp parsing
+import socket
+import subprocess
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
@@ -119,6 +121,65 @@ def labels_count_for_image(filename: str) -> int:
             if line.strip():
                 count += 1
     return count
+
+
+def list_images_paginated(filter_str: str, only_labeled: bool, labeled_only: bool, page: int, page_size: int):
+    """
+    Build paginated gallery payload. Reused by legacy and /api/v1 routes.
+    """
+    images = get_sorted_images(IMAGES_DIR)
+
+    for img in images:
+        fname = img.get("filename")
+        img["is_labeled"] = is_image_labeled(fname)
+
+    global_total = len(images)
+    global_labeled = sum(1 for img in images if img.get("is_labeled"))
+
+    if filter_str:
+        images = [
+            img for img in images
+            if filter_str in img["filename"].lower()
+        ]
+
+    if only_labeled:
+        images = [img for img in images if not img.get("is_labeled")]
+
+    if labeled_only:
+        images = [img for img in images if img.get("is_labeled")]
+
+    total_items = len(images)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+
+    start_idx = (page - 1) * page_size
+    end_idx = min(start_idx + page_size, total_items)
+    page_items = images[start_idx:end_idx]
+
+    # Compute labels count only for the current page to keep large datasets responsive.
+    for img in page_items:
+        base_name, _ = os.path.splitext(img["filename"])
+        labels_path = os.path.join(LABELS_DIR, base_name + ".txt")
+        labels_count = 0
+        if os.path.exists(labels_path):
+            with open(labels_path, "r") as lf:
+                for line in lf:
+                    if line.strip():
+                        labels_count += 1
+        img["labels_count"] = labels_count
+
+    return {
+        "items": page_items,
+        "page": page,
+        "page_size": page_size,
+        "total_items": total_items,
+        "total_pages": total_pages,
+        "shown_start": (start_idx + 1) if total_items > 0 else 0,
+        "shown_end": end_idx,
+        "global_total": global_total,
+        "global_labeled": global_labeled,
+    }
 
 
 # ----------------------------------------------------------------------
@@ -462,59 +523,151 @@ def get_images():
     page = max(page, 1)
     page_size = max(1, min(page_size, 200))
 
-    images = get_sorted_images(IMAGES_DIR)
+    return jsonify(
+        list_images_paginated(
+            filter_str=filter_str,
+            only_labeled=only_labeled,
+            labeled_only=labeled_only,
+            page=page,
+            page_size=page_size,
+        )
+    )
 
-    for img in images:
-        fname = img.get("filename")
-        img["is_labeled"] = is_image_labeled(fname)
 
-    global_total = len(images)
-    global_labeled = sum(1 for img in images if img.get("is_labeled"))
+@app.route("/api/v1/health")
+def api_health():
+    return jsonify({"status": "ok", "service": "agriapp", "version": "v1"})
 
-    if filter_str:
-        images = [
-            img for img in images
-            if filter_str in img["filename"].lower()
-        ]
 
-    if only_labeled:
-        images = [img for img in images if not img.get("is_labeled")]
+@app.route("/api/v1/system/status")
+def api_system_status():
+    try:
+        stat = os.statvfs(IMAGES_DIR)
+        total_bytes = stat.f_blocks * stat.f_frsize
+        free_bytes = stat.f_bavail * stat.f_frsize
+    except Exception:
+        total_bytes = 0
+        free_bytes = 0
 
-    if labeled_only:
-        images = [img for img in images if img.get("is_labeled")]
+    hostname = socket.gethostname()
+    return jsonify(
+        {
+            "status": "ok",
+            "hostname": hostname,
+            "images_dir": IMAGES_DIR,
+            "disk_total_bytes": total_bytes,
+            "disk_free_bytes": free_bytes,
+            "timestamp": int(time.time()),
+        }
+    )
 
-    total_items = len(images)
-    total_pages = max(1, (total_items + page_size - 1) // page_size)
-    if page > total_pages:
-        page = total_pages
 
-    start_idx = (page - 1) * page_size
-    end_idx = min(start_idx + page_size, total_items)
-    page_items = images[start_idx:end_idx]
+@app.route("/api/v1/images")
+def api_images():
+    """
+    Paginated images API for tablet/remote clients.
+    Query parameters are aligned with /get-images.
+    """
+    filter_str = request.args.get("filter", "").strip().lower()
+    only_labeled_raw = request.args.get("only_labeled", "false").strip().lower()
+    only_labeled = only_labeled_raw in ("1", "true", "yes", "on")
+    labeled_only_raw = request.args.get("labeled_only", "false").strip().lower()
+    labeled_only = labeled_only_raw in ("1", "true", "yes", "on")
+    page_raw = request.args.get("page", "1").strip()
+    page_size_raw = request.args.get("page_size", "24").strip()
 
-    # Compute labels count only for the current page to keep large datasets responsive.
-    for img in page_items:
-        base_name, _ = os.path.splitext(img["filename"])
-        labels_path = os.path.join(LABELS_DIR, base_name + ".txt")
-        labels_count = 0
-        if os.path.exists(labels_path):
-            with open(labels_path, "r") as lf:
-                for line in lf:
-                    if line.strip():
-                        labels_count += 1
-        img["labels_count"] = labels_count
+    try:
+        page = int(page_raw)
+    except ValueError:
+        page = 1
+
+    try:
+        page_size = int(page_size_raw)
+    except ValueError:
+        page_size = 24
+
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 200))
+
+    return jsonify(
+        list_images_paginated(
+            filter_str=filter_str,
+            only_labeled=only_labeled,
+            labeled_only=labeled_only,
+            page=page,
+            page_size=page_size,
+        )
+    )
+
+
+@app.route("/api/v1/images/<path:filename>/status")
+def api_image_status(filename):
+    """
+    Return labeling status for one image (API variant).
+    """
+    clean_name = normalize_image_filename(filename)
+    if not clean_name:
+        return jsonify({"status": "error", "message": "filename missing"}), 400
+
+    image_path = os.path.join(IMAGES_DIR, clean_name)
+    if not os.path.exists(image_path):
+        return jsonify({"status": "error", "message": "image not found"}), 404
 
     return jsonify(
         {
-            "items": page_items,
-            "page": page,
-            "page_size": page_size,
-            "total_items": total_items,
-            "total_pages": total_pages,
-            "shown_start": (start_idx + 1) if total_items > 0 else 0,
-            "shown_end": end_idx,
-            "global_total": global_total,
-            "global_labeled": global_labeled,
+            "status": "success",
+            "filename": clean_name,
+            "is_labeled": is_image_labeled(clean_name),
+            "labels_count": labels_count_for_image(clean_name),
+        }
+    )
+
+
+@app.route("/api/v1/capture/oneshot", methods=["POST"])
+def api_capture_oneshot():
+    """
+    Trigger a single capture by calling scripts/run_capture.sh --oneshot.
+    """
+    script_path = os.path.join(os.path.dirname(__file__), "scripts", "run_capture.sh")
+    if not os.path.exists(script_path):
+        return jsonify({"status": "error", "message": "run_capture.sh not found"}), 500
+
+    cmd = ["bash", script_path, "--oneshot"]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"status": "error", "message": "capture timeout"}), 504
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"capture failed: {e}"}), 500
+
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+    if proc.returncode != 0:
+        return jsonify(
+            {
+                "status": "error",
+                "returncode": proc.returncode,
+                "stdout": stdout[-500:],
+                "stderr": stderr[-500:],
+            }
+        ), 500
+
+    newest = get_sorted_images(IMAGES_DIR)
+    latest_filename = newest[0]["filename"] if newest else None
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": "oneshot completed",
+            "latest_filename": latest_filename,
+            "stdout": stdout[-500:],
         }
     )
 

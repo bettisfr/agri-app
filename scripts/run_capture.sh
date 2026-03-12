@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="${PROJECT_DIR:-/home/fra/insect-cloud}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_DIR="${PROJECT_DIR:-$DEFAULT_PROJECT_DIR}"
 cd "${PROJECT_DIR}"
 
 # Optional per-host overrides.
@@ -41,7 +43,7 @@ fi
 CAPTURE_INTERVAL="${CAPTURE_INTERVAL:-30}"
 
 if [[ $# -gt 0 ]]; then
-  exec python client.py "$@"
+  exec python -m backend.capture_client "$@"
 fi
 
-exec python client.py --interval "$CAPTURE_INTERVAL"
+exec python -m backend.capture_client --interval "$CAPTURE_INTERVAL"
