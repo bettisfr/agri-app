@@ -3,6 +3,6 @@
 static/uploads/images
 static/uploads/labels
 static/uploads/jsons
-/__pycache__
+**/__pycache__/
 .codex*
 .env.systemd

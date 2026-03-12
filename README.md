@@ -80,7 +80,7 @@ python client.py --oneshot --profile standard --af-mode continuous --af-range fu
 
 Optional file used by wrapper scripts:
 
-`~/insect-cloud/.env.systemd`
+`~/agri-app/.env.systemd`
 
 Example:
 
@@ -96,7 +96,7 @@ CAPTURE_INTERVAL=300
 Install services on Raspberry Pi:
 
 ```bash
-cd ~/insect-cloud
+cd ~/agri-app
 ./scripts/install_systemd_user_services.sh
 ```
 

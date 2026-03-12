@@ -12,7 +12,7 @@ REMOTE_CMD=""
 
 REMOTE_USER="fra"
 REMOTE_HOST="192.168.1.67"
-REMOTE_PATH="~/insect-cloud"
+REMOTE_PATH="~/agri-app"
 REMOTE_MOUNT_PATH="/home/fra"
 MOUNT_DIR="${HOME}/mnt/rpi5"
 RSYNC_SSH_PORT="22"

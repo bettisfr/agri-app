@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/fra/insect-cloud
-ExecStart=/home/fra/insect-cloud/scripts/run_server.sh
+WorkingDirectory=/home/fra/agri-app
+ExecStart=/home/fra/agri-app/scripts/run_server.sh
 Restart=always
 RestartSec=3
 
