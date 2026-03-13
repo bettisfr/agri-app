@@ -5,6 +5,8 @@ Precision agriculture has progressively shifted from intuition-driven practice t
 
 AgriApp Control is developed exactly in this gap between theoretical model development and practical edge deployment. The project is based on the assumption that robust data collection infrastructure is a prerequisite for reliable AI workflows in agriculture. The core operational unit is a Raspberry Pi node that is physically deployed near the target area and acts as both acquisition device and service endpoint. Around this core, the system offers a coherent software stack for image capture, gallery browsing, manual annotation, device management, and client access from web and tablet interfaces.
 
+In the current evolution, image collection is enriched with contextual sensing. Geospatial coordinates (when GPS fix is available) and environmental measures from BME280 (temperature, humidity, pressure) are persisted together with each capture. This allows downstream curation and analysis to reason not only on visual content, but also on acquisition context.
+
 The motivation for this architecture is pragmatic. Agricultural scenarios are frequently characterized by intermittent network quality, constrained power budgets, long unattended operation windows, and the need for direct on-site intervention by non-specialist users. A desktop-centric workflow is therefore unsuitable. Instead, the system must tolerate network changes, expose simple operational controls, and remain functional even when cloud services are unavailable.
 
 \subsection{Problem Statement}
@@ -21,11 +23,13 @@ The first objective is capture reliability. The system must support deterministi
 
 The second objective is lifecycle consistency. Images, labels, and metadata must evolve together: when an image is created, viewed, labeled, downloaded, or deleted, related artifacts should follow predictable rules. This includes synchronization between JSON annotation state and YOLO TXT exports, as well as coherent behavior in web and tablet galleries.
 
-The third objective is operational control under constraints. In edge deployments, failures are often operational rather than algorithmic. For this reason, the platform must expose high-value maintenance actions through API and UI, including server restart, device reboot, and controlled poweroff, with suitable confirmation mechanisms for destructive operations.
+The third objective is contextual observability. Each capture should carry best-effort context values (GPS latitude/longitude and BME280 T/H/P) without compromising acquisition robustness. If some sensors are unavailable, available metadata should still be retained.
 
-The fourth objective is network resilience. The same software instance should remain usable across multiple Wi-Fi environments and in AP rescue mode. Discovery and client behavior must be fast enough for field use, privileging cache-first strategies and minimizing unnecessary scans.
+The fourth objective is operational control under constraints. In edge deployments, failures are often operational rather than algorithmic. For this reason, the platform must expose high-value maintenance actions through API and UI, including server restart, device reboot, and controlled poweroff, with suitable confirmation mechanisms for destructive operations.
 
-Finally, the fifth objective is maintainable evolution. The platform should be extendable without repeated rewrites by enforcing modular frontend organization, clear backend boundaries, and versioned endpoint semantics.
+The fifth objective is network resilience. The same software instance should remain usable across multiple Wi-Fi environments and in AP rescue mode. Discovery and client behavior must be fast enough for field use, privileging cache-first strategies and minimizing unnecessary scans.
+
+Finally, the sixth objective is maintainable evolution. The platform should be extendable without repeated rewrites by enforcing modular frontend organization, clear backend boundaries, and versioned endpoint semantics.
 
 \subsection{System Perspective}
 From a systems viewpoint, AgriApp Control can be interpreted as a local edge service platform with three tightly connected layers. The data layer stores images and annotation artifacts in a transparent file hierarchy. The service layer, implemented in Flask, exposes capture, gallery, labeling, download, and control endpoints. The presentation layer is split between a browser-based UI and a tablet app written in Kotlin/Compose, both consuming the same backend abstractions.

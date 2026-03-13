@@ -3,6 +3,7 @@ from flask_socketio import SocketIO
 from werkzeug.utils import secure_filename
 import os
 import io
+import glob
 import zipfile
 import time
 import json
@@ -14,6 +15,7 @@ import urllib.request
 import ipaddress
 import struct
 
+from backend.bme_reader import get_bme280_reading
 from backend.gps_reader import get_gps_fix
 from backend.photo_metadata import (
     DEFAULT_METADATA,
@@ -35,12 +37,14 @@ IMAGES_DIR = os.path.join(UPLOAD_ROOT, "images")   # image files
 LABELS_DIR = os.path.join(UPLOAD_ROOT, "labels")   # YOLO txt files
 JSONS_DIR = os.path.join(UPLOAD_ROOT, "jsons")     # per-image json files
 METADATA_DIR = os.path.join(UPLOAD_ROOT, "metadata")  # per-image metadata files
+THUMBS_DIR = os.path.join(UPLOAD_ROOT, "thumbs")  # cached thumbnails
 NETWORK_MODE_SCRIPT = os.path.join(os.path.dirname(__file__), "scripts", "rpi_network_mode.sh")
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
 os.makedirs(LABELS_DIR, exist_ok=True)
 os.makedirs(JSONS_DIR, exist_ok=True)
 os.makedirs(METADATA_DIR, exist_ok=True)
+os.makedirs(THUMBS_DIR, exist_ok=True)
 
 
 # ----------------------------------------------------------------------
@@ -144,6 +148,73 @@ def file_size_bytes_for_image(filename: str) -> int:
         return int(os.path.getsize(path))
     except Exception:
         return 0
+
+
+def thumbnail_path_for_image(filename: str, width: int) -> str:
+    base, _ = os.path.splitext(filename)
+    safe_width = max(64, min(1024, int(width)))
+    return os.path.join(THUMBS_DIR, f"{base}_w{safe_width}.jpg")
+
+
+def build_or_get_thumbnail(filename: str, width: int) -> str | None:
+    """
+    Return cached thumbnail path, building it when needed.
+    On failure, return None.
+    """
+    image_path = os.path.join(IMAGES_DIR, filename)
+    if not os.path.exists(image_path):
+        return None
+
+    width = max(64, min(1024, int(width)))
+    thumb_path = thumbnail_path_for_image(filename, width)
+
+    try:
+        if os.path.exists(thumb_path):
+            if os.path.getmtime(thumb_path) >= os.path.getmtime(image_path):
+                return thumb_path
+    except Exception:
+        pass
+
+    try:
+        from PIL import Image, ImageOps
+    except Exception:
+        return None
+
+    try:
+        with Image.open(image_path) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            src_w, src_h = img.size
+            if src_w <= 0 or src_h <= 0:
+                return None
+
+            if src_w >= src_h:
+                out_w = width
+                out_h = max(1, int((src_h * width) / src_w))
+            else:
+                out_h = width
+                out_w = max(1, int((src_w * width) / src_h))
+
+            img = img.resize((out_w, out_h), Image.Resampling.LANCZOS)
+            os.makedirs(THUMBS_DIR, exist_ok=True)
+            img.save(thumb_path, format="JPEG", quality=72, optimize=True)
+        return thumb_path
+    except Exception:
+        return None
+
+
+def remove_thumbnails_for_image(filename: str) -> int:
+    base, _ = os.path.splitext(filename)
+    pattern = os.path.join(THUMBS_DIR, f"{base}_w*.jpg")
+    removed = 0
+    for path in glob.glob(pattern):
+        try:
+            os.remove(path)
+            removed += 1
+        except Exception:
+            pass
+    return removed
 
 
 def image_dimensions_for_image(filename: str) -> tuple[int, int]:
@@ -333,22 +404,33 @@ def extract_metadata(image_path):
         return dict(DEFAULT_METADATA)
 
 
-def geotag_image_with_gps(image_path: str) -> dict:
+def enrich_image_with_live_metadata(image_path: str) -> dict:
     """
-    Best-effort GPS geotag for an image.
+    Best-effort metadata enrichment for an image.
+    Adds GPS and BME280 readings when available.
     Returns metadata dict actually stored/available after attempt.
     """
     metadata = extract_metadata(image_path)
-    fix = get_gps_fix()
-    if not fix:
-        return metadata
+    metadata_updated = False
 
-    metadata["latitude"] = fix.get("latitude")
-    metadata["longitude"] = fix.get("longitude")
-    try:
-        save_metadata_for_image_path(image_path, metadata)
-    except Exception:
-        pass
+    fix = get_gps_fix()
+    if fix:
+        metadata["latitude"] = fix.get("latitude")
+        metadata["longitude"] = fix.get("longitude")
+        metadata_updated = True
+
+    bme = get_bme280_reading()
+    if bme:
+        metadata["temperature"] = bme.get("temperature")
+        metadata["humidity"] = bme.get("humidity")
+        metadata["pressure"] = bme.get("pressure")
+        metadata_updated = True
+
+    if metadata_updated:
+        try:
+            save_metadata_for_image_path(image_path, metadata)
+        except Exception:
+            pass
     return metadata
 
 
@@ -887,6 +969,35 @@ def api_image_status(filename):
     )
 
 
+@app.route("/api/v1/images/<path:filename>/thumbnail")
+def api_image_thumbnail(filename):
+    """
+    Serve cached thumbnail for one image.
+    Query:
+      - w: target max-side width (default 320, range 64..1024)
+    """
+    clean_name = normalize_image_filename(filename)
+    if not clean_name:
+        return jsonify({"status": "error", "message": "filename missing"}), 400
+
+    image_path = os.path.join(IMAGES_DIR, clean_name)
+    if not os.path.exists(image_path):
+        return jsonify({"status": "error", "message": "image not found"}), 404
+
+    try:
+        width = int((request.args.get("w") or "320").strip())
+    except Exception:
+        width = 320
+    width = max(64, min(width, 1024))
+
+    thumb_path = build_or_get_thumbnail(clean_name, width)
+    if thumb_path and os.path.exists(thumb_path):
+        return send_file(thumb_path, mimetype="image/jpeg", max_age=86400)
+
+    # Fallback if thumbnail generation is unavailable (e.g. Pillow missing).
+    return send_file(image_path, mimetype="image/jpeg", max_age=0)
+
+
 @app.route("/api/v1/capture/oneshot", methods=["POST"])
 def api_capture_oneshot():
     """
@@ -928,7 +1039,7 @@ def api_capture_oneshot():
     latest_metadata = None
     if latest_filename:
         latest_path = os.path.join(IMAGES_DIR, latest_filename)
-        latest_metadata = geotag_image_with_gps(latest_path)
+        latest_metadata = enrich_image_with_live_metadata(latest_path)
 
     return jsonify(
         {
@@ -1031,7 +1142,7 @@ def api_esp_capture_proxy():
     try:
         with open(saved_path, "wb") as out:
             out.write(data)
-        saved_metadata = geotag_image_with_gps(saved_path)
+        saved_metadata = enrich_image_with_live_metadata(saved_path)
     except Exception:
         # Keep response usable even if local save fails.
         saved_name = ""
@@ -1098,7 +1209,7 @@ def delete_image():
     json_path = json_path_for_image(filename)
     metadata_path = metadata_path_for_image_path(img_path)
 
-    removed = {"image": False, "labels": False, "json": False, "metadata": False}
+    removed = {"image": False, "labels": False, "json": False, "metadata": False, "thumbnails": False}
 
     try:
         if os.path.exists(img_path):
@@ -1115,9 +1226,11 @@ def delete_image():
         if os.path.exists(metadata_path):
             os.remove(metadata_path)
             removed["metadata"] = True
+        if remove_thumbnails_for_image(filename) > 0:
+            removed["thumbnails"] = True
 
         status = "success"
-        if not (removed["image"] or removed["labels"] or removed["json"] or removed["metadata"]):
+        if not (removed["image"] or removed["labels"] or removed["json"] or removed["metadata"] or removed["thumbnails"]):
             status = "not_found"
         elif not removed["image"]:
             status = "partial"
@@ -1136,6 +1249,7 @@ def api_delete_all_images():
     removed_labels = 0
     removed_jsons = 0
     removed_metadata = 0
+    removed_thumbnails = 0
     errors = []
 
     for name in os.listdir(IMAGES_DIR):
@@ -1180,6 +1294,11 @@ def api_delete_all_images():
         except Exception as e:
             errors.append(f"metadata:{filename}:{e}")
 
+        try:
+            removed_thumbnails += remove_thumbnails_for_image(filename)
+        except Exception as e:
+            errors.append(f"thumbnail:{filename}:{e}")
+
     status = "success" if not errors else "partial"
     return jsonify(
         {
@@ -1188,6 +1307,7 @@ def api_delete_all_images():
             "removed_labels": removed_labels,
             "removed_jsons": removed_jsons,
             "removed_metadata": removed_metadata,
+            "removed_thumbnails": removed_thumbnails,
             "errors_count": len(errors),
         }
     )

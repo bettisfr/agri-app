@@ -1,5 +1,6 @@
 package it.unipg.agriapp
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -57,9 +59,14 @@ import it.unipg.agriapp.ui.MainViewModel
 import it.unipg.agriapp.ui.theme.AgriAppTheme
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.ContentScale
 import it.unipg.agriapp.data.ImageMetadata
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,7 +104,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
@@ -111,158 +118,155 @@ class MainActivity : ComponentActivity() {
                         )
                         .padding(12.dp)
                 ) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "AgriApp Control",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                "Host: ${ui.connectedHost?.removePrefix("http://") ?: "not connected"}",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
                         Card(
-                            modifier = Modifier
-                                .weight(0.36f)
-                                .fillMaxSize(),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFDF8)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Connections", fontWeight = FontWeight.SemiBold)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FilledTonalButton(onClick = { vm.discoverLan { ui = it } }, enabled = !ui.busy) {
-                                        Text("Discover")
-                                    }
-                                    FilledTonalButton(onClick = { vm.setNetworkMode("wifi_only") { ui = it } }, enabled = !ui.busy) {
-                                        Text("WiFi")
-                                    }
-                                    FilledTonalButton(onClick = { vm.setNetworkMode("ap_only") { ui = it } }, enabled = !ui.busy) {
-                                        Text("AP")
-                                    }
-                                }
-
-                                if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.horizontalScroll(rememberScrollState())
-                                    ) {
-                                        Text("RPi found", fontWeight = FontWeight.SemiBold)
-                                        ui.discoveredRpiBaseUrls.take(4).forEach { host ->
-                                            AssistChip(
-                                                onClick = {
-                                                    vm.updateBaseUrl(host)
-                                                    ui = vm.state
-                                                },
-                                                label = { Text(host.removePrefix("http://")) }
-                                            )
-                                        }
-                                    }
-                                }
-                                if (ui.discoveredEspBaseUrls.isNotEmpty()) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.horizontalScroll(rememberScrollState())
-                                    ) {
-                                        Text("ESP found", fontWeight = FontWeight.SemiBold)
-                                        ui.discoveredEspBaseUrls.take(4).forEach { host ->
-                                            AssistChip(
-                                                onClick = {
-                                                    vm.selectEspHost(host)
-                                                    ui = vm.state
-                                                },
-                                                label = { Text(host.removePrefix("http://")) }
-                                            )
-                                        }
-                                    }
-                                }
-                                if (ui.discoveredRpiBaseUrls.isEmpty() && ui.discoveredEspBaseUrls.isEmpty()) {
-                                    Text("No hosts found yet")
-                                }
-
-                                if (ui.busy) {
-                                    CircularProgressIndicator()
-                                }
-
-                                InfoPanel(ui)
-                                LogPanel(ui.log)
+                                Text(
+                                    "AgriApp Control",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "Host: ${ui.connectedHost?.removePrefix("http://") ?: "not connected"}",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
 
-                        Card(
+                        Spacer(Modifier.height(10.dp))
+                        Row(
                             modifier = Modifier
-                                .weight(0.64f)
-                                .fillMaxSize(),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFDF8)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                                .fillMaxWidth()
+                                .weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.Top
                         ) {
-                            Column(
+                            Card(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    .weight(0.36f)
+                                    .fillMaxSize(),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFDF8)),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                             ) {
-                                Text("Operations", fontWeight = FontWeight.SemiBold)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    ElevatedButton(
-                                        onClick = { vm.oneShotRpi { ui = it } },
-                                        enabled = !ui.busy
-                                    ) {
-                                        Text("Shot RPi")
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("Connections", fontWeight = FontWeight.SemiBold)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilledTonalButton(onClick = { vm.discoverLan { ui = it } }, enabled = !ui.busy) {
+                                            Text("Discover")
+                                        }
+                                        FilledTonalButton(onClick = { vm.setNetworkMode("wifi_only") { ui = it } }, enabled = !ui.busy) {
+                                            Text("WiFi")
+                                        }
+                                        FilledTonalButton(onClick = { vm.setNetworkMode("ap_only") { ui = it } }, enabled = !ui.busy) {
+                                            Text("AP")
+                                        }
                                     }
-                                    ElevatedButton(
-                                        onClick = { vm.oneShotEsp { ui = it } },
-                                        enabled = !ui.busy
-                                    ) {
-                                        Text("Shot ESP")
+
+                                    if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.horizontalScroll(rememberScrollState())
+                                        ) {
+                                            Text("RPi found", fontWeight = FontWeight.SemiBold)
+                                            ui.discoveredRpiBaseUrls.take(4).forEach { host ->
+                                                AssistChip(
+                                                    onClick = {
+                                                        vm.updateBaseUrl(host)
+                                                        ui = vm.state
+                                                    },
+                                                    label = { Text(host.removePrefix("http://")) }
+                                                )
+                                            }
+                                        }
                                     }
-                                    FilledTonalButton(
-                                        onClick = { vm.loadSystem { ui = it } },
-                                        enabled = !ui.busy
-                                    ) {
-                                        Text("Status")
+                                    if (ui.discoveredEspBaseUrls.isNotEmpty()) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.horizontalScroll(rememberScrollState())
+                                        ) {
+                                            Text("ESP found", fontWeight = FontWeight.SemiBold)
+                                            ui.discoveredEspBaseUrls.take(4).forEach { host ->
+                                                AssistChip(
+                                                    onClick = {
+                                                        vm.selectEspHost(host)
+                                                        ui = vm.state
+                                                    },
+                                                    label = { Text(host.removePrefix("http://")) }
+                                                )
+                                            }
+                                        }
                                     }
-                                    FilledTonalButton(
-                                        onClick = { vm.loadImages { ui = it } },
-                                        enabled = !ui.busy
-                                    ) {
-                                        Text("Gallery")
+                                    if (ui.discoveredRpiBaseUrls.isEmpty() && ui.discoveredEspBaseUrls.isEmpty()) {
+                                        Text("No hosts found yet")
                                     }
-                                    FilledTonalButton(
-                                        onClick = { showSystemDialog = true },
-                                        enabled = !ui.busy
-                                    ) {
-                                        Text("System")
-                                    }
+
+                                    InfoPanel(ui)
+                                    LogPanel(ui.log)
                                 }
+                            }
+
+                            Card(
+                                modifier = Modifier
+                                    .weight(0.64f)
+                                    .fillMaxSize(),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFDF8)),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("Operations", fontWeight = FontWeight.SemiBold)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        ElevatedButton(
+                                            onClick = { vm.oneShotRpi { ui = it } },
+                                            enabled = !ui.busy
+                                        ) {
+                                            Text("Shot RPi")
+                                        }
+                                        ElevatedButton(
+                                            onClick = { vm.oneShotEsp { ui = it } },
+                                            enabled = !ui.busy
+                                        ) {
+                                            Text("Shot ESP")
+                                        }
+                                        FilledTonalButton(
+                                            onClick = { vm.loadSystem { ui = it } },
+                                            enabled = !ui.busy
+                                        ) {
+                                            Text("Status")
+                                        }
+                                        FilledTonalButton(
+                                            onClick = { vm.loadImages { ui = it } },
+                                            enabled = !ui.busy
+                                        ) {
+                                            Text("Gallery")
+                                        }
+                                        FilledTonalButton(
+                                            onClick = { showSystemDialog = true },
+                                            enabled = !ui.busy
+                                        ) {
+                                            Text("System")
+                                        }
+                                    }
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -291,16 +295,27 @@ class MainActivity : ComponentActivity() {
                                 ImageList(
                                     modifier = Modifier.weight(1f),
                                     ui = ui,
+                                    onRefresh = {
+                                        vm.refreshGalleryOnly { ui = it }
+                                    },
                                     onImageClick = {
                                         vm.selectRpiImage(it)
                                         ui = vm.state
                                     },
                                     onDeleteClick = { pendingDelete = it }
                                 )
+                                }
                             }
                         }
                     }
-
+                    if (ui.busy) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
                 }
 
                 val viewerModel: Any? = ui.viewerImageBytes ?: ui.viewerImageUrl
@@ -519,42 +534,68 @@ private fun LogPanel(log: String) {
     }
 }
 
+@OptIn(ExperimentalMaterialApi::class)
 @androidx.compose.runtime.Composable
 private fun ImageList(
     modifier: Modifier = Modifier,
     ui: MainUiState,
+    onRefresh: () -> Unit,
     onImageClick: (String) -> Unit,
     onDeleteClick: (String) -> Unit
 ) {
-    LazyColumn(modifier = modifier) {
-        items(ui.images) { item ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp)
-            ) {
-                Row(
+    val pullRefreshState = rememberPullRefreshState(
+        refreshing = ui.busy,
+        onRefresh = onRefresh
+    )
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .pullRefresh(pullRefreshState)
+    ) {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(ui.images) { item ->
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(bottom = 8.dp)
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = buildThumbnailUrl(ui.baseUrl, item.filename),
+                        contentDescription = item.filename,
+                        modifier = Modifier
+                            .size(68.dp)
+                            .clipToBounds(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .clickable { onImageClick(item.filename) }
                     ) {
-                        Text(item.filename, fontWeight = FontWeight.Medium)
-                        Text("${item.upload_time}  |  ${formatBytes(item.file_size_bytes)}  |  ${formatResolution(item.image_width, item.image_height)}")
-                        Text(formatGridGpsEnv(item.metadata))
-                    }
-                    TextButton(onClick = { onDeleteClick(item.filename) }) {
-                        Text("Delete")
+                            Text(item.filename, fontWeight = FontWeight.Medium)
+                            Text("${item.upload_time}  |  ${formatBytes(item.file_size_bytes)}  |  ${formatResolution(item.image_width, item.image_height)}")
+                            Text(formatGridGpsEnv(item.metadata))
+                        }
+                        TextButton(onClick = { onDeleteClick(item.filename) }) {
+                            Text("Delete")
+                        }
                     }
                 }
             }
         }
+        PullRefreshIndicator(
+            refreshing = ui.busy,
+            state = pullRefreshState,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 }
 
@@ -567,6 +608,12 @@ private fun formatBytes(bytes: Long): String {
         b >= kb -> String.format("%.1f kB", b.toDouble() / kb.toDouble())
         else -> "$b B"
     }
+}
+
+private fun buildThumbnailUrl(baseUrl: String, filename: String): String {
+    val cleanBase = baseUrl.trimEnd('/')
+    val encoded = Uri.encode(filename)
+    return "$cleanBase/api/v1/images/$encoded/thumbnail?w=320"
 }
 
 private fun formatResolution(width: Int?, height: Int?): String {

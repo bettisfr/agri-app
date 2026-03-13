@@ -9,8 +9,6 @@ const ROUTES = {
     labelPage: "/label",
 };
 
-const STATIC_UPLOADS_BASE = "/static/uploads/images";
-
 const gallery = document.getElementById("gallery");
 const socket = typeof io === "function" ? io() : null;
 
@@ -75,12 +73,23 @@ function buildGetImagesUrl() {
     return `${ROUTES.getImages}?${params.toString()}`;
 }
 
+function buildThumbnailUrl(filename) {
+    return `${ROUTES.imageStatus}/${encodeURIComponent(filename)}/thumbnail?w=320`;
+}
+
 function buildMetadataHTML(imageData) {
     const labeledText = imageData.is_labeled ? "Labeled" : "To label";
     const labeledClass = imageData.is_labeled ? "ok" : "todo";
     const sizeText = formatBytes(imageData.file_size_bytes ?? 0);
     const latLonText = formatLatLon(imageData.metadata);
     const envText = formatEnvSensors(imageData.metadata);
+    const detailLines = [];
+    if (latLonText !== "GPS: n/a") detailLines.push(latLonText);
+    if (envText) detailLines.push(envText);
+    if (detailLines.length === 0) detailLines.push("Metadata: n/a");
+    const detailHtml = detailLines
+        .map((line) => `<div class=\"gallery-meta-row gallery-meta-gps\">${line}</div>`)
+        .join("");
 
     return `
         <div class="gallery-meta-name">${imageData.filename}</div>
@@ -89,8 +98,7 @@ function buildMetadataHTML(imageData) {
             <span>${sizeText}</span>
             <span class="gallery-meta-pill ${labeledClass}">${labeledText}</span>
         </div>
-        <div class="gallery-meta-row gallery-meta-gps">${latLonText}</div>
-        <div class="gallery-meta-row gallery-meta-gps">${envText}</div>
+        ${detailHtml}
     `;
 }
 
@@ -121,7 +129,11 @@ function formatModalMetadata(imageData) {
     const md = imageData?.metadata || {};
     const gps = formatLatLon(md);
     const env = formatEnvSensors(md);
-    return `${gps} | ${env}`;
+    const parts = [];
+    if (gps !== "GPS: n/a") parts.push(gps);
+    if (env) parts.push(env);
+    if (parts.length === 0) return "Metadata: n/a";
+    return parts.join(" | ");
 }
 
 function formatEnvSensors(metadata) {
@@ -129,10 +141,11 @@ function formatEnvSensors(metadata) {
     const humidity = Number(metadata?.humidity);
     const pressure = Number(metadata?.pressure);
 
-    const tText = Number.isFinite(temperature) ? `${temperature.toFixed(1)} C` : "n/a";
-    const hText = Number.isFinite(humidity) ? `${humidity.toFixed(1)} %` : "n/a";
-    const pText = Number.isFinite(pressure) ? `${pressure.toFixed(1)} hPa` : "n/a";
-    return `T: ${tText} | H: ${hText} | P: ${pText}`;
+    const parts = [];
+    if (Number.isFinite(temperature)) parts.push(`T: ${temperature.toFixed(1)} C`);
+    if (Number.isFinite(humidity)) parts.push(`H: ${humidity.toFixed(1)} %`);
+    if (Number.isFinite(pressure)) parts.push(`P: ${pressure.toFixed(1)} hPa`);
+    return parts.join(" | ");
 }
 
 function findCardByFilename(filename) {
@@ -241,7 +254,7 @@ function updateModalStatusTag() {
         statusTag.textContent = "";
         statusTag.classList.remove("ok", "todo");
         if (titleTextEl) titleTextEl.textContent = "File name: -";
-        if (metaEl) metaEl.textContent = "GPS: n/a | T: n/a | H: n/a | P: n/a";
+        if (metaEl) metaEl.textContent = "Metadata: n/a";
         return;
     }
 
@@ -402,7 +415,7 @@ function addImageToGallery(imageData, prepend = false) {
 
     const img = document.createElement("img");
     img.classList.add("image-gallery-img");
-    img.dataset.src = `${STATIC_UPLOADS_BASE}/${imageData.filename}`;
+    img.dataset.src = buildThumbnailUrl(imageData.filename);
     img.alt = imageData.filename;
     img.style.visibility = "hidden";
 

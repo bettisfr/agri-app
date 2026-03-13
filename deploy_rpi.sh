@@ -429,6 +429,7 @@ COMMON_ARGS=(
   --exclude='mobile/android/local.properties'
   --exclude='firmware/esp32-cam/secrets.h'
   --exclude='static/uploads/images/'
+  --exclude='static/uploads/thumbs/'
   --exclude='static/uploads/labels/'
   --exclude='static/uploads/jsons/'
   --exclude='static/uploads/metadata/'

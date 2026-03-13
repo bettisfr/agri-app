@@ -7,6 +7,8 @@ At a structural level, the system is composed of three cooperating tiers. The fi
 
 The Raspberry Pi therefore plays a dual role: it is both an acquisition endpoint and an application server. This dual role simplifies deployment and makes local operations deterministic. An optional ESP32-CAM can be attached to the ecosystem as a secondary image source. In this case, Raspberry Pi acts as a proxy and orchestration point, so clients can keep a single control flow even when direct ESP connectivity is unstable.
 
+In addition to image sources, the edge tier integrates optional contextual sensors. A USB GPS receiver provides geospatial coordinates, while a BME280 on I2C provides environmental values. Both sensors are sampled with best-effort logic during capture workflows and are persisted as per-image sidecar metadata.
+
 \begin{figure}[htbp]
 \centering
 \begin{tikzpicture}[
@@ -47,6 +49,8 @@ Once images are available, clients retrieve paginated views through API calls. P
 When an image enters the annotation phase, the labeler workflow maintains two synchronized outputs. JSON files store the full annotation state, including information required for UI reconstruction and status semantics. YOLO TXT files store training-compatible entries, preserving interoperability with common computer vision pipelines. This dual-output strategy separates operational richness from model-training compatibility.
 
 Deletion operations close the lifecycle. Single-item deletion and bulk deletion both enforce artifact consistency by removing related label files together with image files. In this way, the architecture minimizes orphaned metadata and dataset drift.
+
+Metadata sidecars follow the same lifecycle constraints: when an image is removed, associated metadata artifacts are removed as well. This preserves consistency between binary image content and contextual data.
 
 \subsection{Network Modes}
 Network behavior is modeled as a first-class architectural concern. The system supports two principal modes: Wi-Fi client mode and AP rescue mode. In Wi-Fi client mode, Raspberry Pi joins an existing infrastructure network and exposes services through its assigned address. This mode is the default in office, home, or campus environments.

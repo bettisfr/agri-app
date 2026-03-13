@@ -1,3 +1,5 @@
 Flask
 Flask-SocketIO
 pyserial
+adafruit-circuitpython-bme280
+Pillow

@@ -135,6 +135,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         state = state.copy(connectedHost = state.baseUrl, log = "Images loaded: ${res.items.size}/${res.total_items}")
     }
 
+    fun refreshGalleryOnly(onState: (MainUiState) -> Unit) = runCall(onState) {
+        val res = api().images(page = 1, pageSize = state.imagesPageSize)
+        applyImagesResponse(res, state.selectedImageFilename)
+        state = state.copy(log = "Gallery refreshed")
+    }
+
     fun loadImagesPage(page: Int, onState: (MainUiState) -> Unit) = runCall(onState) {
         val targetPage = page.coerceAtLeast(1)
         val res = api().images(page = targetPage, pageSize = state.imagesPageSize)
