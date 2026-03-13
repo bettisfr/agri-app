@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
 import it.unipg.agriapp.data.ImageMetadata
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -653,6 +654,8 @@ private fun ZoomableImageDialog(
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+    var swipeAccumX by remember { mutableFloatStateOf(0f) }
+    var lastSwipeMs by remember { mutableStateOf(0L) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -694,9 +697,22 @@ private fun ZoomableImageDialog(
                             detectTransformGestures { _, pan, zoom, _ ->
                                 val newScale = (scale * zoom).coerceIn(1f, 6f)
                                 if (newScale == 1f) {
+                                    if (abs(pan.x) > abs(pan.y)) {
+                                        swipeAccumX += pan.x
+                                        val now = System.currentTimeMillis()
+                                        if ((now - lastSwipeMs) > 320L && abs(swipeAccumX) > 120f) {
+                                            if (swipeAccumX > 0f && canPrev) onPrev()
+                                            if (swipeAccumX < 0f && canNext) onNext()
+                                            lastSwipeMs = now
+                                            swipeAccumX = 0f
+                                        }
+                                    } else {
+                                        swipeAccumX = 0f
+                                    }
                                     offsetX = 0f
                                     offsetY = 0f
                                 } else {
+                                    swipeAccumX = 0f
                                     offsetX += pan.x
                                     offsetY += pan.y
                                 }
