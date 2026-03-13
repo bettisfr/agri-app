@@ -23,8 +23,8 @@ Path & Method & Description \\
 \texttt{/api/v1/images/delete} & POST & Delete one image and related artifacts \\
 \texttt{/api/v1/images/delete-all} & POST & Delete all images and related artifacts \\
 \texttt{/api/v1/images/upload} & POST & Upload image from external producer \\
-\texttt{/api/v1/capture/oneshot} & POST & Trigger Raspberry Pi one-shot capture \\
-\texttt{/api/v1/esp/capture} & GET & Proxy one-shot ESP capture via Raspberry Pi \\
+\texttt{/api/v1/capture/rpi/oneshot} & POST & Trigger Raspberry Pi one-shot capture \\
+\texttt{/api/v1/capture/esp/oneshot} & GET & Proxy one-shot ESP capture via Raspberry Pi \\
 \texttt{/api/v1/labels} & GET & Read labels for one image \\
 \texttt{/api/v1/labels} & POST & Save labels for one image \\
 \texttt{/api/v1/download/dataset} & GET & Download full dataset ZIP \\
@@ -52,8 +52,8 @@ To improve operational clarity, endpoints can also be grouped by the device (or 
 \toprule
 Path & Method & Primary purpose on RPi \\
 \midrule
-\texttt{/api/v1/capture/oneshot} & POST & Local camera one-shot capture \\
-\texttt{/api/v1/esp/capture} & GET & Proxy ESP capture through RPi \\
+\texttt{/api/v1/capture/rpi/oneshot} & POST & Local camera one-shot capture \\
+\texttt{/api/v1/capture/esp/oneshot} & GET & Proxy ESP capture through RPi \\
 \texttt{/api/v1/system/status} & GET & Host/runtime status exposure \\
 \texttt{/api/v1/system/server/restart} & POST & Service restart control \\
 \texttt{/api/v1/system/reboot} & POST & Device reboot control \\
@@ -92,8 +92,8 @@ Path & Method & Main tablet usage \\
 \texttt{/api/v1/images} & GET & Paginated gallery list \\
 \texttt{/api/v1/images/delete} & POST & Item delete action \\
 \texttt{/api/v1/images/delete-all} & POST & Delete-all gallery action \\
-\texttt{/api/v1/capture/oneshot} & POST & RPi one-shot action \\
-\texttt{/api/v1/esp/capture} & GET & ESP one-shot via proxy \\
+\texttt{/api/v1/capture/rpi/oneshot} & POST & RPi one-shot action \\
+\texttt{/api/v1/capture/esp/oneshot} & GET & ESP one-shot via proxy \\
 \texttt{/api/v1/system/server/restart} & POST & Service control \\
 \texttt{/api/v1/system/reboot} & POST & Device reboot \\
 \texttt{/api/v1/system/poweroff} & POST & Device shutdown \\
@@ -105,7 +105,7 @@ Path & Method & Main tablet usage \\
 \toprule
 Path & Method & Integration role \\
 \midrule
-\texttt{/api/v1/esp/capture} & GET & Backend proxy endpoint consumed by clients \\
+\texttt{/api/v1/capture/esp/oneshot} & GET & Backend proxy endpoint consumed by clients \\
 \texttt{/api/v1/images/upload} & POST & Generic ingestion path for external producers \\
 \bottomrule
 \end{longtable}
@@ -113,7 +113,7 @@ Path & Method & Integration role \\
 \subsection{Request/Response Semantics}
 Most API endpoints exchange JSON payloads and return explicit status fields suitable for UI rendering and operational diagnostics. Download endpoints return binary streams (JPEG/ZIP). Pagination contracts are server-side and include canonical metadata (\texttt{page}, \texttt{page\_size}, \texttt{total\_items}, \texttt{total\_pages}) so that web and tablet clients can share a consistent navigation model. Thumbnail endpoints return lightweight JPEG streams backed by server-side cache to reduce list/grid payload cost.
 
-Each image item exposed by \texttt{/api/v1/images} includes a \texttt{metadata} object with environmental and geospatial fields (\texttt{temperature}, \texttt{pressure}, \texttt{humidity}, \texttt{latitude}, \texttt{longitude}, \texttt{user\_comment}). During one-shot acquisition flows (\texttt{/api/v1/capture/oneshot} and \texttt{/api/v1/esp/capture}), the backend performs best-effort sampling of GPS and BME280 on Raspberry Pi and persists available values in dedicated sidecar files under \texttt{static/uploads/metadata}. This design avoids image recompression and keeps contextual information queryable in both browser and tablet galleries.
+Each image item exposed by \texttt{/api/v1/images} includes a \texttt{metadata} object with environmental and geospatial fields (\texttt{temperature}, \texttt{pressure}, \texttt{humidity}, \texttt{latitude}, \texttt{longitude}, \texttt{user\_comment}). During one-shot acquisition flows (\texttt{/api/v1/capture/rpi/oneshot} and \texttt{/api/v1/capture/esp/oneshot}), the backend performs best-effort sampling of GPS and BME280 on Raspberry Pi and persists available values in dedicated sidecar files under \texttt{static/uploads/metadata}. This design avoids image recompression and keeps contextual information queryable in both browser and tablet galleries.
 
 Annotation endpoints operate on image-scoped state and are responsible for maintaining consistency between JSON annotation files and YOLO TXT exports. Deletion endpoints enforce artifact cleanup behavior (image, label, JSON, metadata sidecar) to reduce orphaned files.
 

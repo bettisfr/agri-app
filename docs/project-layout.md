@@ -10,7 +10,7 @@ This repository is organized into three logical areas:
 - `mobile/android/`: reserved for upcoming Android control app.
 
 Operations and deployment:
-- `scripts/`: run/install helper scripts (`run_server.sh`, `run_capture.sh`, etc.).
+- `scripts/`: run/install helper scripts (`run_server.sh`, `capture_rpi.sh`, `capture_esp.py`, etc.).
 - `systemd/`: user service templates for Raspberry Pi.
 - `deploy_rpi.sh`: sync/mount/deploy helper.
 

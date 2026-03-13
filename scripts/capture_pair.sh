@@ -84,7 +84,7 @@ if [[ ! -s "${ESP_FILE}" ]]; then
 fi
 
 echo "[2/3] Capturing IMX708 image on ${SSH_TARGET}"
-REMOTE_IMAGE_PATH="$(ssh "${SSH_TARGET}" "cd '${RPI_APP_DIR}' && bash scripts/run_capture.sh --oneshot >/dev/null 2>&1 && IMG=\$(ls -t static/uploads/images/*.jpg | head -n1) && readlink -f \"\$IMG\"" 2>/dev/null || true)"
+REMOTE_IMAGE_PATH="$(ssh "${SSH_TARGET}" "cd '${RPI_APP_DIR}' && bash scripts/capture_rpi.sh --oneshot >/dev/null 2>&1 && IMG=\$(ls -t static/uploads/images/*.jpg | head -n1) && readlink -f \"\$IMG\"" 2>/dev/null || true)"
 
 if [[ -z "${REMOTE_IMAGE_PATH}" ]]; then
   echo "IMX708 capture failed: could not get remote image path" >&2

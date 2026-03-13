@@ -18,7 +18,7 @@ interface AgriApi {
         @Query("page_size") pageSize: Int = 20
     ): ImagesResponse
 
-    @POST("/api/v1/capture/oneshot")
+    @POST("/api/v1/capture/rpi/oneshot")
     suspend fun oneShot(): CaptureResponse
 
     @GET("/api/v1/capture/loop/status")

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
@@ -44,12 +46,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.graphics.BitmapFactory
 import coil.compose.AsyncImage
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -65,6 +69,9 @@ import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
 import it.unipg.agriapp.data.ImageMetadata
@@ -76,6 +83,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             AgriAppTheme {
+                val compactShape = RoundedCornerShape(6.dp)
+                val compactBtnPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 val vm: MainViewModel = viewModel()
                 var ui by remember { mutableStateOf(vm.state) }
                 var discoveryStarted by remember { mutableStateOf(false) }
@@ -85,6 +94,8 @@ class MainActivity : ComponentActivity() {
                 var showAutoStartDialog by remember { mutableStateOf(false) }
                 var pendingDelete by remember { mutableStateOf<String?>(null) }
                 var showDeleteAllConfirm by remember { mutableStateOf(false) }
+                var logEntries by remember { mutableStateOf(listOf<String>()) }
+                var galleryRefreshing by remember { mutableStateOf(false) }
 
                 LaunchedEffect(Unit) {
                     if (!discoveryStarted) {
@@ -101,10 +112,22 @@ class MainActivity : ComponentActivity() {
                         vm.loadAutoCaptureStatus { ui = it }
                     }
                 }
+                LaunchedEffect(ui.log) {
+                    val msg = ui.log.trim()
+                    if (msg.isNotEmpty()) {
+                        val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                            .format(java.util.Date())
+                        val line = "[$ts] $msg"
+                        if (logEntries.lastOrNull() != line) {
+                            logEntries = (logEntries + line).takeLast(600)
+                        }
+                    }
+                }
                 LaunchedEffect(Unit) {
                     while (true) {
                         delay(60_000)
                         vm.loadSystem { ui = it }
+                        vm.loadNetworkMode { ui = it }
                     }
                 }
                 LaunchedEffect(ui.autoCaptureRunning) {
@@ -126,18 +149,19 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         )
-                        .padding(12.dp)
+                        .padding(8.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
+                            shape = compactShape,
                             colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6)),
                             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -154,34 +178,35 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(6.dp))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.Top
                         ) {
                             Card(
                                 modifier = Modifier
                                     .weight(0.36f)
                                     .fillMaxSize(),
+                                shape = compactShape,
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFDF8)),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text("Connections", fontWeight = FontWeight.SemiBold)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        FilledTonalButton(onClick = { vm.discoverLan { ui = it } }, enabled = !ui.busy) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        FilledTonalButton(onClick = { vm.discoverLan { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
                                             Text("Discover")
                                         }
-                                        FilledTonalButton(onClick = { vm.setNetworkMode("wifi_only") { ui = it } }, enabled = !ui.busy) {
+                                        FilledTonalButton(onClick = { vm.setNetworkMode("wifi_only") { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
                                             Text("WiFi")
                                         }
-                                        FilledTonalButton(onClick = { vm.setNetworkMode("ap_only") { ui = it } }, enabled = !ui.busy) {
+                                        FilledTonalButton(onClick = { vm.setNetworkMode("ap_only") { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
                                             Text("AP")
                                         }
                                     }
@@ -192,14 +217,14 @@ class MainActivity : ComponentActivity() {
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.horizontalScroll(rememberScrollState())
                                         ) {
-                                            Text("RPi found", fontWeight = FontWeight.SemiBold)
+                                            Text("RPi", fontWeight = FontWeight.SemiBold)
                                             ui.discoveredRpiBaseUrls.take(4).forEach { host ->
-                                                AssistChip(
+                                                HostChip(
+                                                    label = compactHostLabel(host),
                                                     onClick = {
                                                         vm.updateBaseUrl(host)
                                                         ui = vm.state
-                                                    },
-                                                    label = { Text(host.removePrefix("http://")) }
+                                                    }
                                                 )
                                             }
                                         }
@@ -210,14 +235,14 @@ class MainActivity : ComponentActivity() {
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.horizontalScroll(rememberScrollState())
                                         ) {
-                                            Text("ESP found", fontWeight = FontWeight.SemiBold)
+                                            Text("ESP", fontWeight = FontWeight.SemiBold)
                                             ui.discoveredEspBaseUrls.take(4).forEach { host ->
-                                                AssistChip(
+                                                HostChip(
+                                                    label = compactHostLabel(host),
                                                     onClick = {
                                                         vm.selectEspHost(host)
                                                         ui = vm.state
-                                                    },
-                                                    label = { Text(host.removePrefix("http://")) }
+                                                    }
                                                 )
                                             }
                                         }
@@ -227,7 +252,6 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                     InfoPanel(ui)
-                                    LogPanel(ui.log)
                                 }
                             }
 
@@ -235,49 +259,59 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier
                                     .weight(0.64f)
                                     .fillMaxSize(),
+                                shape = compactShape,
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFDF8)),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                             ) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        .padding(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text("Operations", fontWeight = FontWeight.SemiBold)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         ElevatedButton(
                                             onClick = { showShotDialog = true },
-                                            enabled = !ui.busy
+                                            enabled = !ui.busy,
+                                            shape = compactShape,
+                                            contentPadding = compactBtnPadding
                                         ) {
                                             Text("Shot")
                                         }
                                         FilledTonalButton(
                                             onClick = { showAutoStartDialog = true },
-                                            enabled = !ui.busy
+                                            enabled = !ui.busy,
+                                            shape = compactShape,
+                                            contentPadding = compactBtnPadding
                                         ) {
                                             Text("Start Auto")
                                         }
                                         FilledTonalButton(
                                             onClick = { vm.stopAutoCapture { ui = it } },
-                                            enabled = !ui.busy
+                                            enabled = !ui.busy,
+                                            shape = compactShape,
+                                            contentPadding = compactBtnPadding
                                         ) {
                                             Text("Stop Auto")
                                         }
                                         Spacer(modifier = Modifier.weight(1f))
                                         FilledTonalButton(
                                             onClick = { showSystemDialog = true },
-                                            enabled = !ui.busy
+                                            enabled = !ui.busy,
+                                            shape = compactShape,
+                                            contentPadding = compactBtnPadding
                                         ) {
                                             Text("System")
                                         }
                                     }
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
+                                        shape = compactShape,
                                         colors = CardDefaults.cardColors(
                                             containerColor = if (ui.autoCaptureRunning == true) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
                                         )
@@ -322,8 +356,15 @@ class MainActivity : ComponentActivity() {
                                 ImageList(
                                     modifier = Modifier.weight(1f),
                                     ui = ui,
+                                    refreshing = galleryRefreshing,
                                     onRefresh = {
-                                        vm.refreshGalleryOnly { ui = it }
+                                        galleryRefreshing = true
+                                        vm.refreshGalleryOnly {
+                                            ui = it
+                                            if (!it.busy) {
+                                                galleryRefreshing = false
+                                            }
+                                        }
                                     },
                                     onImageClick = {
                                         vm.selectRpiImage(it)
@@ -334,6 +375,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                        Spacer(Modifier.height(6.dp))
+                        BottomLogPanel(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            entries = logEntries
+                        )
                     }
                     if (ui.busy) {
                         Box(
@@ -467,19 +515,19 @@ private fun ShotDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6))
+            shape = RoundedCornerShape(6.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Capture source", fontWeight = FontWeight.SemiBold)
                 Text("Choose which device should take the next shot.")
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ElevatedButton(onClick = onShotRpi, enabled = !busy) { Text("RPi") }
-                    ElevatedButton(onClick = onShotEsp, enabled = !busy) { Text("ESP") }
-                    FilledTonalButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ElevatedButton(onClick = onShotRpi, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("RPi") }
+                    ElevatedButton(onClick = onShotEsp, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("ESP") }
+                    FilledTonalButton(onClick = onDismiss, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("Cancel") }
                 }
             }
         }
@@ -498,12 +546,12 @@ private fun StartAutoDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6))
+            shape = RoundedCornerShape(6.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Start auto capture", fontWeight = FontWeight.SemiBold)
                 Text("Choose interval")
@@ -527,9 +575,9 @@ private fun StartAutoDialog(
                         )
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ElevatedButton(onClick = { onStart(selected) }, enabled = !busy) { Text("Start") }
-                    FilledTonalButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ElevatedButton(onClick = { onStart(selected) }, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("Start") }
+                    FilledTonalButton(onClick = onDismiss, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("Cancel") }
                 }
             }
         }
@@ -549,12 +597,12 @@ private fun SystemActionsDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6))
+            shape = RoundedCornerShape(6.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("System actions", fontWeight = FontWeight.SemiBold)
                 Text("Maintenance operations for Raspberry Pi.")
@@ -566,7 +614,8 @@ private fun SystemActionsDialog(
                     FilledTonalButton(
                         onClick = onRestartServer,
                         enabled = !busy,
-                        modifier = Modifier.width(actionButtonWidth)
+                        modifier = Modifier.width(actionButtonWidth),
+                        shape = RoundedCornerShape(6.dp)
                     ) { Text("Restart Server") }
                     Text("Restart only the AgriApp server service.", modifier = Modifier.weight(1f))
                 }
@@ -578,7 +627,8 @@ private fun SystemActionsDialog(
                     FilledTonalButton(
                         onClick = { confirmAction = "reboot" },
                         enabled = !busy,
-                        modifier = Modifier.width(actionButtonWidth)
+                        modifier = Modifier.width(actionButtonWidth),
+                        shape = RoundedCornerShape(6.dp)
                     ) { Text("Reboot RPi") }
                     Text("Reboot the Raspberry Pi device.", modifier = Modifier.weight(1f))
                 }
@@ -590,7 +640,8 @@ private fun SystemActionsDialog(
                     FilledTonalButton(
                         onClick = { confirmAction = "poweroff" },
                         enabled = !busy,
-                        modifier = Modifier.width(actionButtonWidth)
+                        modifier = Modifier.width(actionButtonWidth),
+                        shape = RoundedCornerShape(6.dp)
                     ) { Text("Poweroff RPi") }
                     Text("Power off the Raspberry Pi device.", modifier = Modifier.weight(1f))
                 }
@@ -598,7 +649,7 @@ private fun SystemActionsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    Button(onClick = onDismiss, enabled = !busy) { Text("Close") }
+                    Button(onClick = onDismiss, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("Close") }
                 }
             }
         }
@@ -640,27 +691,132 @@ private fun SystemActionsDialog(
 private fun InfoPanel(ui: MainUiState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3F9EE))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             val freeMb = ui.system?.disk_free_bytes?.div(1024 * 1024) ?: 0
             val apText = if (ui.network?.ap_active == true) "on" else "off"
             val clientText = if (ui.network?.client_active == true) "on" else "off"
-            val modeText = ui.network?.mode ?: "-"
-            Text("Free ${freeMb} MB  |  Mode $modeText  |  AP $apText  |  Client $clientText")
+            Text("Status", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text("Free ${freeMb} MB")
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                val apOn = ui.network?.ap_active == true
+                val clientOn = ui.network?.client_active == true
+                StatusBadge("AP ${if (apOn) "ON" else "OFF"}", ok = apOn)
+                StatusBadge("WiFi ${if (clientOn) "ON" else "OFF"}", ok = clientOn)
+            }
         }
     }
 }
 
 @androidx.compose.runtime.Composable
-private fun LogPanel(log: String) {
+private fun StatusBadge(label: String, ok: Boolean) {
+    val bg = if (ok) Color(0xFFDDF2DF) else Color(0xFFFFEDD5)
+    val fg = if (ok) Color(0xFF1F6B2A) else Color(0xFF9A3412)
+    Box(
+        modifier = Modifier
+            .background(bg, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(label, color = fg, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun HostChip(
+    label: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .background(Color.White, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 3.dp)
+    ) {
+        Text(label, fontWeight = FontWeight.Medium)
+    }
+}
+
+private fun compactHostLabel(raw: String): String {
+    return raw
+        .removePrefix("http://")
+        .removePrefix("https://")
+        .removeSuffix(":5000")
+        .removeSuffix(":80")
+}
+
+@androidx.compose.runtime.Composable
+private fun BottomLogPanel(
+    modifier: Modifier = Modifier,
+    entries: List<String>
+) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(entries.size) {
+        if (entries.isNotEmpty()) {
+            listState.animateScrollToItem(entries.lastIndex)
+        }
+    }
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color(0xFFF3F9EE))
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(6.dp)) {
             Text("Log", fontWeight = FontWeight.Bold)
-            Text(log)
+            Spacer(Modifier.height(3.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White, RoundedCornerShape(6.dp))
+                    .padding(4.dp)
+            ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(end = 10.dp),
+                    state = listState
+                ) {
+                    items(entries) { line ->
+                        Text(line)
+                    }
+                }
+
+                Canvas(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(6.dp)
+                ) {
+                    val total = entries.size.coerceAtLeast(1)
+                    val visible = listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
+                    val first = listState.firstVisibleItemIndex.coerceAtLeast(0)
+
+                    val trackColor = Color(0xFFCFDAC8)
+                    val thumbColor = Color(0xFF6F8E6A)
+
+                    drawRoundRect(
+                        color = trackColor,
+                        topLeft = Offset(0f, 0f),
+                        size = Size(size.width, size.height),
+                        cornerRadius = CornerRadius(size.width, size.width)
+                    )
+
+                    val minThumbFraction = 0.10f
+                    val thumbFraction = (visible.toFloat() / total.toFloat()).coerceIn(minThumbFraction, 1f)
+                    val thumbHeight = size.height * thumbFraction
+                    val maxTop = (size.height - thumbHeight).coerceAtLeast(0f)
+                    val progress = if (total <= visible) 0f else (first.toFloat() / (total - visible).toFloat()).coerceIn(0f, 1f)
+                    val top = maxTop * progress
+
+                    drawRoundRect(
+                        color = thumbColor,
+                        topLeft = Offset(0f, top),
+                        size = Size(size.width, thumbHeight),
+                        cornerRadius = CornerRadius(size.width, size.width)
+                    )
+                }
+            }
         }
     }
 }
@@ -670,12 +826,14 @@ private fun LogPanel(log: String) {
 private fun ImageList(
     modifier: Modifier = Modifier,
     ui: MainUiState,
+    refreshing: Boolean,
     onRefresh: () -> Unit,
     onImageClick: (String) -> Unit,
     onDeleteClick: (String) -> Unit
 ) {
+    val listState = rememberLazyListState()
     val pullRefreshState = rememberPullRefreshState(
-        refreshing = ui.busy,
+        refreshing = refreshing,
         onRefresh = onRefresh
     )
     Box(
@@ -683,47 +841,89 @@ private fun ImageList(
             .fillMaxWidth()
             .pullRefresh(pullRefreshState)
     ) {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(ui.images) { item ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                ) {
-                    Row(
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(end = 10.dp),
+                state = listState
+            ) {
+                items(ui.images) { item ->
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AsyncImage(
-                        model = buildThumbnailUrl(ui.baseUrl, item.filename),
-                        contentDescription = item.filename,
-                        modifier = Modifier
-                            .size(68.dp)
-                            .clipToBounds(),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { onImageClick(item.filename) }
+                            .padding(bottom = 8.dp)
                     ) {
-                            Text(item.filename, fontWeight = FontWeight.Medium)
-                            Text("${item.upload_time}  |  ${formatBytes(item.file_size_bytes)}  |  ${formatResolution(item.image_width, item.image_height)}")
-                            Text(formatGridGpsEnv(item.metadata))
-                        }
-                        TextButton(onClick = { onDeleteClick(item.filename) }) {
-                            Text("Delete")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(
+                            model = buildThumbnailUrl(ui.baseUrl, item.filename),
+                            contentDescription = item.filename,
+                            modifier = Modifier
+                                .size(68.dp)
+                                .clipToBounds(),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onImageClick(item.filename) }
+                        ) {
+                                Text(item.filename, fontWeight = FontWeight.Medium)
+                                Text("${item.upload_time}  |  ${formatBytes(item.file_size_bytes)}  |  ${formatResolution(item.image_width, item.image_height)}")
+                                Text(formatGridGpsEnv(item.metadata))
+                            }
+                            TextButton(onClick = { onDeleteClick(item.filename) }) {
+                                Text("Delete")
+                            }
                         }
                     }
                 }
             }
+
+            Canvas(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(6.dp)
+            ) {
+                val total = ui.images.size.coerceAtLeast(1)
+                val visible = listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
+                val first = listState.firstVisibleItemIndex.coerceAtLeast(0)
+
+                val trackColor = Color(0xFFCFDAC8)
+                val thumbColor = Color(0xFF6F8E6A)
+
+                drawRoundRect(
+                    color = trackColor,
+                    topLeft = Offset(0f, 0f),
+                    size = Size(size.width, size.height),
+                    cornerRadius = CornerRadius(size.width, size.width)
+                )
+
+                val minThumbFraction = 0.10f
+                val thumbFraction = (visible.toFloat() / total.toFloat()).coerceIn(minThumbFraction, 1f)
+                val thumbHeight = size.height * thumbFraction
+                val maxTop = (size.height - thumbHeight).coerceAtLeast(0f)
+                val progress = if (total <= visible) 0f else (first.toFloat() / (total - visible).toFloat()).coerceIn(0f, 1f)
+                val top = maxTop * progress
+
+                drawRoundRect(
+                    color = thumbColor,
+                    topLeft = Offset(0f, top),
+                    size = Size(size.width, thumbHeight),
+                    cornerRadius = CornerRadius(size.width, size.width)
+                )
+            }
         }
         PullRefreshIndicator(
-            refreshing = ui.busy,
+            refreshing = refreshing,
             state = pullRefreshState,
             modifier = Modifier.align(Alignment.TopCenter)
         )
@@ -795,12 +995,14 @@ private fun ZoomableImageDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(12.dp),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(6.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
                         .padding(10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -812,12 +1014,12 @@ private fun ZoomableImageDialog(
                         )
                         Text(
                             formatModalMetadata(metadata),
-                            color = Color(0xFF56707D)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Button(onClick = onPrev, enabled = canPrev) { Text("Prev") }
-                    Button(onClick = onNext, enabled = canNext) { Text("Next") }
-                    Button(onClick = onDismiss) { Text("Close") }
+                    FilledTonalButton(onClick = onPrev, enabled = canPrev, shape = RoundedCornerShape(6.dp)) { Text("Prev") }
+                    FilledTonalButton(onClick = onNext, enabled = canNext, shape = RoundedCornerShape(6.dp)) { Text("Next") }
+                    FilledTonalButton(onClick = onDismiss, shape = RoundedCornerShape(6.dp)) { Text("Close") }
                 }
                 Box(
                     modifier = Modifier

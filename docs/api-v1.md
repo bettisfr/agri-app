@@ -88,12 +88,12 @@ Response:
 
 ## 5) Capture oneshot
 - Method: `POST`
-- Path: `/api/v1/capture/oneshot`
-- Purpose: trigger one capture on RPi camera via `scripts/run_capture.sh --oneshot`.
+- Path: `/api/v1/capture/rpi/oneshot`
+- Purpose: trigger one capture on RPi camera via `scripts/capture_rpi.sh --oneshot`.
 
 Example:
 ```bash
-curl -X POST http://192.168.1.67:5000/api/v1/capture/oneshot
+curl -X POST http://192.168.1.67:5000/api/v1/capture/rpi/oneshot
 ```
 
 Success response:
@@ -116,7 +116,7 @@ Notes:
 
 ## 5b) ESP capture via RPi proxy
 - Method: `GET`
-- Path: `/api/v1/esp/capture`
+- Path: `/api/v1/capture/esp/oneshot`
 - Query:
   - `esp_base` (required), e.g. `http://192.168.4.239`
 - Purpose: capture one JPEG from ESP and save it in gallery as `esp_*.jpg`.
@@ -126,7 +126,7 @@ Example:
 curl --get \
   --data-urlencode "esp_base=http://192.168.4.239" \
   -o esp_capture.jpg \
-  "http://192.168.4.1:5000/api/v1/esp/capture"
+  "http://192.168.4.1:5000/api/v1/capture/esp/oneshot"
 ```
 
 Notes:

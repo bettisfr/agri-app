@@ -55,7 +55,11 @@ CAPTURE_LOOP_LOG = os.path.join("/tmp", "agriapp-capture-loop.log")
 
 
 def _capture_loop_script_path() -> str:
-    return os.path.join(os.path.dirname(__file__), "scripts", "run_capture.sh")
+    return os.path.join(os.path.dirname(__file__), "scripts", "capture_rpi.sh")
+
+
+def _capture_esp_helper_path() -> str:
+    return os.path.join(os.path.dirname(__file__), "scripts", "capture_esp.py")
 
 
 def _capture_loop_is_running() -> bool:
@@ -1037,14 +1041,14 @@ def api_image_thumbnail(filename):
     return send_file(image_path, mimetype="image/jpeg", max_age=0)
 
 
-@app.route("/api/v1/capture/oneshot", methods=["POST"])
+@app.route("/api/v1/capture/rpi/oneshot", methods=["POST"])
 def api_capture_oneshot():
     """
-    Trigger a single capture by calling scripts/run_capture.sh --oneshot.
+    Trigger a single RPi capture via scripts/capture_rpi.sh --oneshot.
     """
-    script_path = os.path.join(os.path.dirname(__file__), "scripts", "run_capture.sh")
+    script_path = _capture_loop_script_path()
     if not os.path.exists(script_path):
-        return jsonify({"status": "error", "message": "run_capture.sh not found"}), 500
+        return jsonify({"status": "error", "message": "capture_rpi.sh not found"}), 500
 
     cmd = ["bash", script_path, "--oneshot"]
     try:
@@ -1113,7 +1117,7 @@ def api_capture_loop_start():
 
     script_path = _capture_loop_script_path()
     if not os.path.exists(script_path):
-        return jsonify({"status": "error", "message": "run_capture.sh not found"}), 500
+        return jsonify({"status": "error", "message": "capture_rpi.sh not found"}), 500
 
     with CAPTURE_LOOP_LOCK:
         if _capture_loop_is_running():
@@ -1173,7 +1177,7 @@ def api_capture_loop_stop():
     return jsonify({"status": "success", "running": False, "message": "capture loop stopped"})
 
 
-@app.route("/api/v1/esp/capture", methods=["GET"])
+@app.route("/api/v1/capture/esp/oneshot", methods=["GET"])
 def api_esp_capture_proxy():
     """
     Proxy one JPEG capture from ESP-CAM through Raspberry Pi.
@@ -1197,9 +1201,9 @@ def api_esp_capture_proxy():
 
     base = f"{parsed.scheme}://{parsed.netloc}"
     esp_capture_url = f"{base}/capture"
-    helper = os.path.join(os.path.dirname(__file__), "firmware", "esp32-cam", "save_photo.py")
+    helper = _capture_esp_helper_path()
     if not os.path.exists(helper):
-        return jsonify({"status": "error", "message": "save_photo.py helper not found"}), 500
+        return jsonify({"status": "error", "message": "capture_esp.py helper not found"}), 500
 
     tmp_name = os.path.join("/tmp", f"esp_api_{int(time.time() * 1000)}.jpg")
     cmd = [
@@ -1209,6 +1213,8 @@ def api_esp_capture_proxy():
         esp_capture_url,
         "--framesize",
         "qxga",
+        "--set",
+        "quality=10",
         "--timeout",
         "20",
         "--out",

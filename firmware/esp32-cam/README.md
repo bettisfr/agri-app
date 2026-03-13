@@ -6,7 +6,7 @@ This folder contains the ESP32-CAM sketch and camera server sources used by Agri
 - `esp32-cam.ino`: main sketch (CameraWebServer-based)
 - `app_httpd.cpp`, `camera_index.h`, `camera_pins.h`: web server/camera sources
 - `board_config.h`, `device_profile.h`: board/sensor tuning
-- `save_photo.py`: helper script to fetch one image from `/capture`
+- `../../scripts/capture_esp.py`: helper script to fetch one image from `/capture`
 
 ## Wi-Fi credentials
 1. Copy `secrets.example.h` to `secrets.h`.

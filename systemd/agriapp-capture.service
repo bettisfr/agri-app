@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/fra/agri-app
-ExecStart=/home/fra/agri-app/scripts/run_capture.sh
+ExecStart=/home/fra/agri-app/scripts/capture_rpi.sh
 Restart=always
 RestartSec=3
 

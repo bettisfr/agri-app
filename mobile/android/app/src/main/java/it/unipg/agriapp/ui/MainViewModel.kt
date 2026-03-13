@@ -266,15 +266,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 viewerImageUrl = null,
                 viewerImageBytes = jpegBytes,
                 viewerTitle = "ESP capture",
-                log = "ESP capture: success (via ${rpiBase.removePrefix("http://")}, esp ${espBase.removePrefix("http://")}) | $debugCmd"
+                log = "ESP capture: success (via ${rpiBase.removePrefix("http://")}, esp ${espBase.removePrefix("http://")})"
             )
         } else {
             Log.e(logTag, "OneShot ESP failed err=${err ?: "unknown"} cmd=$debugCmd")
             state.copy(
                 log = if (err.isNullOrBlank()) {
-                    "ESP capture: failed (via ${rpiBase.removePrefix("http://")}) | $debugCmd"
+                    "ESP capture: failed (via ${rpiBase.removePrefix("http://")})"
                 } else {
-                    "ESP capture: failed (via ${rpiBase.removePrefix("http://")}) $err | $debugCmd"
+                    "ESP capture: failed (via ${rpiBase.removePrefix("http://")}) $err"
                 }
             )
         }
@@ -585,7 +585,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return try {
             val rpiBase = normalizeBase(rpiBaseRaw, withPort5000 = true)
             val enc = URLEncoder.encode(espBase, Charsets.UTF_8.name())
-            val url = URL("${rpiBase}/api/v1/esp/capture?esp_base=$enc")
+            val url = URL("${rpiBase}/api/v1/capture/esp/oneshot?esp_base=$enc")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 3500
@@ -617,7 +617,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun buildEspProxyDebugCommand(rpiBaseRaw: String, espBase: String): String {
         val rpiBase = normalizeBase(rpiBaseRaw, withPort5000 = true)
         val enc = URLEncoder.encode(espBase, Charsets.UTF_8.name())
-        return "GET ${rpiBase}/api/v1/esp/capture?esp_base=$enc"
+        return "GET ${rpiBase}/api/v1/capture/esp/oneshot?esp_base=$enc"
     }
 
     private fun applyImagesResponse(res: ImagesResponse, preferredSelected: String?) {

@@ -17,7 +17,7 @@ Edge app for Raspberry Pi camera capture + local web gallery/labeling.
 - `scripts/run_server.sh`
   - Starts `server.py` loading Python env (pyenv or venv fallback).
 
-- `scripts/run_capture.sh`
+- `scripts/capture_rpi.sh`
   - Starts `client.py` loading Python env (pyenv or venv fallback).
   - With args: forwards args to `client.py` (example: `--oneshot`).
   - Without args: runs continuous capture using `CAPTURE_INTERVAL` (default 30s).
