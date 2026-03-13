@@ -1,9 +1,3 @@
-flask
-requests
-Pillow
-ultralytics
-psutil
-memory-profiler
-pandas
-flask-socketio
-piexif
+Flask
+Flask-SocketIO
+pyserial

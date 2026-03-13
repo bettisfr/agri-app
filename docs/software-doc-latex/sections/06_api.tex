@@ -111,7 +111,9 @@ Path & Method & Integration role \\
 \subsection{Request/Response Semantics}
 Most API endpoints exchange JSON payloads and return explicit status fields suitable for UI rendering and operational diagnostics. Download endpoints return binary streams (JPEG/ZIP). Pagination contracts are server-side and include canonical metadata (\texttt{page}, \texttt{page\_size}, \texttt{total\_items}, \texttt{total\_pages}) so that web and tablet clients can share a consistent navigation model.
 
-Annotation endpoints operate on image-scoped state and are responsible for maintaining consistency between JSON annotation files and YOLO TXT exports. Deletion endpoints enforce artifact cleanup behavior (image, label, JSON) to reduce orphaned files.
+Each image item exposed by \texttt{/api/v1/images} includes a \texttt{metadata} object with environmental and geospatial fields (\texttt{temperature}, \texttt{pressure}, \texttt{humidity}, \texttt{latitude}, \texttt{longitude}, \texttt{user\_comment}). During one-shot acquisition flows (\texttt{/api/v1/capture/oneshot} and \texttt{/api/v1/esp/capture}), the backend performs best-effort GPS sampling on the Raspberry Pi and persists latitude/longitude in a dedicated sidecar file under \texttt{static/uploads/metadata}. This design avoids image recompression and keeps geotag information queryable in both browser and tablet galleries.
+
+Annotation endpoints operate on image-scoped state and are responsible for maintaining consistency between JSON annotation files and YOLO TXT exports. Deletion endpoints enforce artifact cleanup behavior (image, label, JSON, metadata sidecar) to reduce orphaned files.
 
 \subsection{Deprecation and Migration Note}
 The project has completed a major cleanup step by removing key legacy aliases previously used for labels and single-image deletion. Ongoing maintenance should continue converging remaining historical routes toward the \texttt{/api/v1} namespace.

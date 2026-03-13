@@ -60,6 +60,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clipToBounds
+import it.unipg.agriapp.data.ImageMetadata
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -305,12 +306,14 @@ class MainActivity : ComponentActivity() {
                 val viewerModel: Any? = ui.viewerImageBytes ?: ui.viewerImageUrl
                 viewerModel?.let { model ->
                     val currentIndex = ui.images.indexOfFirst { it.filename == ui.selectedImageFilename }
+                    val selectedItem = if (currentIndex >= 0) ui.images[currentIndex] else null
                     val canNavigate = ui.viewerImageBytes == null && currentIndex >= 0
                     val canPrev = canNavigate && currentIndex > 0
                     val canNext = canNavigate && currentIndex < (ui.images.size - 1)
                     ZoomableImageDialog(
                         imageModel = model,
                         title = ui.viewerTitle ?: "Image",
+                        metadata = selectedItem?.metadata,
                         canPrev = canPrev,
                         canNext = canNext,
                         onPrev = {
@@ -544,6 +547,7 @@ private fun ImageList(
                     ) {
                         Text(item.filename, fontWeight = FontWeight.Medium)
                         Text("${item.upload_time}  |  ${formatBytes(item.file_size_bytes)}  |  ${formatResolution(item.image_width, item.image_height)}")
+                        Text(formatGridGpsEnv(item.metadata))
                     }
                     TextButton(onClick = { onDeleteClick(item.filename) }) {
                         Text("Delete")
@@ -571,10 +575,28 @@ private fun formatResolution(width: Int?, height: Int?): String {
     return if (w > 0 && h > 0) "${w}x${h}" else "-"
 }
 
+private fun formatGps(latitude: Double?, longitude: Double?): String {
+    if (latitude == null || longitude == null) return "GPS: n/a"
+    return String.format("GPS: %.6f, %.6f", latitude, longitude)
+}
+
+private fun formatGridGpsEnv(metadata: ImageMetadata?): String {
+    val gps = formatGps(metadata?.latitude, metadata?.longitude)
+    val t = metadata?.temperature?.let { String.format("%.1f C", it) } ?: "n/a"
+    val h = metadata?.humidity?.let { String.format("%.1f %%", it) } ?: "n/a"
+    val p = metadata?.pressure?.let { String.format("%.1f hPa", it) } ?: "n/a"
+    return "$gps | T: $t | H: $h | P: $p"
+}
+
+private fun formatModalMetadata(metadata: ImageMetadata?): String {
+    return formatGridGpsEnv(metadata)
+}
+
 @androidx.compose.runtime.Composable
 private fun ZoomableImageDialog(
     imageModel: Any,
     title: String,
+    metadata: ImageMetadata?,
     canPrev: Boolean,
     canNext: Boolean,
     onPrev: () -> Unit,
@@ -603,11 +625,16 @@ private fun ZoomableImageDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        title,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "File name: $title",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            formatModalMetadata(metadata),
+                            color = Color(0xFF56707D)
+                        )
+                    }
                     Button(onClick = onPrev, enabled = canPrev) { Text("Prev") }
                     Button(onClick = onNext, enabled = canNext) { Text("Next") }
                     Button(onClick = onDismiss) { Text("Close") }

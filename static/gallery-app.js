@@ -43,6 +43,8 @@ const dom = {
     labelerPrevBtn: () => document.getElementById("labelerModalPrevBtn"),
     labelerNextBtn: () => document.getElementById("labelerModalNextBtn"),
     labelerStatusTag: () => document.getElementById("labelerModalStatusTag"),
+    labelerTitleText: () => document.getElementById("labelerModalTitleText"),
+    labelerMeta: () => document.getElementById("labelerModalMeta"),
     confirmOverlay: () => document.getElementById("confirmModalOverlay"),
     confirmMessage: () => document.getElementById("confirmModalMessage"),
     confirmCancel: () => document.getElementById("confirmModalCancel"),
@@ -77,6 +79,8 @@ function buildMetadataHTML(imageData) {
     const labeledText = imageData.is_labeled ? "Labeled" : "To label";
     const labeledClass = imageData.is_labeled ? "ok" : "todo";
     const sizeText = formatBytes(imageData.file_size_bytes ?? 0);
+    const latLonText = formatLatLon(imageData.metadata);
+    const envText = formatEnvSensors(imageData.metadata);
 
     return `
         <div class="gallery-meta-name">${imageData.filename}</div>
@@ -85,6 +89,8 @@ function buildMetadataHTML(imageData) {
             <span>${sizeText}</span>
             <span class="gallery-meta-pill ${labeledClass}">${labeledText}</span>
         </div>
+        <div class="gallery-meta-row gallery-meta-gps">${latLonText}</div>
+        <div class="gallery-meta-row gallery-meta-gps">${envText}</div>
     `;
 }
 
@@ -97,6 +103,36 @@ function formatBytes(bytes) {
         return `${(value / 1024).toFixed(1)} kB`;
     }
     return `${value} B`;
+}
+
+function formatLatLon(metadata) {
+    const lat = Number(metadata?.latitude);
+    const lon = Number(metadata?.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return "GPS: n/a";
+    }
+    if (Math.abs(lat) < 1e-9 && Math.abs(lon) < 1e-9) {
+        return "GPS: n/a";
+    }
+    return `GPS: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+}
+
+function formatModalMetadata(imageData) {
+    const md = imageData?.metadata || {};
+    const gps = formatLatLon(md);
+    const env = formatEnvSensors(md);
+    return `${gps} | ${env}`;
+}
+
+function formatEnvSensors(metadata) {
+    const temperature = Number(metadata?.temperature);
+    const humidity = Number(metadata?.humidity);
+    const pressure = Number(metadata?.pressure);
+
+    const tText = Number.isFinite(temperature) ? `${temperature.toFixed(1)} C` : "n/a";
+    const hText = Number.isFinite(humidity) ? `${humidity.toFixed(1)} %` : "n/a";
+    const pText = Number.isFinite(pressure) ? `${pressure.toFixed(1)} hPa` : "n/a";
+    return `T: ${tText} | H: ${hText} | P: ${pText}`;
 }
 
 function findCardByFilename(filename) {
@@ -196,17 +232,27 @@ function updateModalNavigationButtons() {
 
 function updateModalStatusTag() {
     const statusTag = dom.labelerStatusTag();
+    const titleTextEl = dom.labelerTitleText();
+    const metaEl = dom.labelerMeta();
     if (!statusTag) return;
 
     const idx = getActiveModalIndex();
     if (idx < 0) {
         statusTag.textContent = "";
         statusTag.classList.remove("ok", "todo");
+        if (titleTextEl) titleTextEl.textContent = "File name: -";
+        if (metaEl) metaEl.textContent = "GPS: n/a | T: n/a | H: n/a | P: n/a";
         return;
     }
 
     const imageData = galleryState.pageImages[idx];
     const isLabeled = !!imageData?.is_labeled;
+    if (titleTextEl) {
+        titleTextEl.textContent = `File name: ${imageData?.filename || "-"}`;
+    }
+    if (metaEl) {
+        metaEl.textContent = formatModalMetadata(imageData);
+    }
     statusTag.textContent = isLabeled ? "Labeled" : "To label";
     statusTag.classList.toggle("ok", isLabeled);
     statusTag.classList.toggle("todo", !isLabeled);
@@ -239,12 +285,14 @@ async function refreshSingleImageCard(filename) {
                 labels_count: data.labels_count,
                 is_labeled: data.is_labeled,
                 file_size_bytes: data.file_size_bytes,
+                metadata: data.metadata,
             });
             const stateItem = galleryState.pageImages.find((img) => img.filename === data.filename);
             if (stateItem) {
                 stateItem.labels_count = data.labels_count;
                 stateItem.is_labeled = data.is_labeled;
                 stateItem.file_size_bytes = data.file_size_bytes ?? stateItem.file_size_bytes;
+                stateItem.metadata = data.metadata ?? stateItem.metadata;
             }
             updateModalStatusTag();
             return;

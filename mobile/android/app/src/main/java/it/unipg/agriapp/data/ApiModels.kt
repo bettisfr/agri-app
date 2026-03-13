@@ -19,9 +19,19 @@ data class CaptureResponse(
     val status: String = "",
     val message: String? = null,
     val latest_filename: String? = null,
+    val metadata: ImageMetadata? = null,
     val stdout: String? = null,
     val stderr: String? = null,
     val returncode: Int? = null
+)
+
+data class ImageMetadata(
+    val temperature: Double? = null,
+    val pressure: Double? = null,
+    val humidity: Double? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val user_comment: String? = null
 )
 
 data class ImageItem(
@@ -30,6 +40,7 @@ data class ImageItem(
     val file_size_bytes: Long = 0,
     val image_width: Int? = null,
     val image_height: Int? = null,
+    val metadata: ImageMetadata? = null,
     val is_labeled: Boolean = false,
     val labels_count: Int = 0
 )

@@ -255,11 +255,36 @@ footer p {
 
 .labeler-modal-header h3 {
     margin: 0;
+    display: flex;
+    align-items: center;
     font-family: var(--font-display);
-    font-size: 1.02rem;
+    font-size: 0.98rem;
     font-weight: 700;
     letter-spacing: -0.01em;
     color: #1d3f28;
+    gap: 8px;
+    min-width: 0;
+}
+
+.labeler-modal-header-main {
+    min-width: 0;
+    flex: 1;
+}
+
+#labelerModalTitleText {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.labeler-modal-meta {
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: #58707d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 64vw;
 }
 
 .labeler-modal-status-tag {
@@ -538,6 +563,12 @@ footer p {
     align-items: center;
     color: var(--ui-muted);
     font-size: 0.9rem;
+}
+
+.gallery-meta-gps {
+    justify-content: flex-start;
+    font-size: 0.84rem;
+    color: #59727f;
 }
 
 .gallery-meta-pill {

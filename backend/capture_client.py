@@ -7,6 +7,12 @@ import time
 from datetime import datetime
 from shutil import which
 
+from backend.gps_reader import get_gps_fix
+from backend.photo_metadata import (
+    DEFAULT_METADATA,
+    load_metadata_for_image_path,
+    save_metadata_for_image_path,
+)
 
 IMAGE_DIR = "static/uploads/images"
 
@@ -268,6 +274,23 @@ def capture_photo(
     )
     try:
         subprocess.run(cmd, check=True)
+        metadata = load_metadata_for_image_path(file_path)
+        if not metadata:
+            metadata = dict(DEFAULT_METADATA)
+        fix = get_gps_fix()
+        if fix:
+            metadata["latitude"] = fix["latitude"]
+            metadata["longitude"] = fix["longitude"]
+            save_metadata_for_image_path(file_path, metadata)
+            logging.info(
+                "GPS fix saved for %s: lat=%.7f lon=%.7f (%s)",
+                os.path.basename(file_path),
+                float(fix["latitude"]),
+                float(fix["longitude"]),
+                fix.get("gps_port", "unknown-port"),
+            )
+        else:
+            logging.info("No GPS fix available for %s", os.path.basename(file_path))
         logging.info("Saved image: %s", file_path)
         return file_path
     except subprocess.CalledProcessError as exc:

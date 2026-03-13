@@ -147,10 +147,13 @@
 <div id="labelerModalOverlay" class="labeler-modal-overlay">
     <div class="labeler-modal-shell" role="dialog" aria-modal="true" aria-labelledby="labelerModalTitle">
         <div class="labeler-modal-header">
-            <h3 id="labelerModalTitle">
-                Label Image
-                <span id="labelerModalStatusTag" class="labeler-modal-status-tag"></span>
-            </h3>
+            <div class="labeler-modal-header-main">
+                <h3 id="labelerModalTitle">
+                    <span id="labelerModalStatusTag" class="labeler-modal-status-tag"></span>
+                    <span id="labelerModalTitleText">File name: -</span>
+                </h3>
+                <div id="labelerModalMeta" class="labeler-modal-meta">GPS: n/a | T: n/a | H: n/a | P: n/a</div>
+            </div>
             <div class="labeler-modal-header-actions">
                 <button id="labelerModalPrevBtn" class="labeler-modal-close-btn labeler-modal-nav-btn" aria-label="Previous image">Prev</button>
                 <button id="labelerModalNextBtn" class="labeler-modal-close-btn labeler-modal-nav-btn" aria-label="Next image">Next</button>

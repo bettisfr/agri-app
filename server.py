@@ -14,6 +14,14 @@ import urllib.request
 import ipaddress
 import struct
 
+from backend.gps_reader import get_gps_fix
+from backend.photo_metadata import (
+    DEFAULT_METADATA,
+    load_metadata_for_image_path,
+    metadata_path_for_image_path,
+    save_metadata_for_image_path,
+)
+
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
 
@@ -26,11 +34,13 @@ UPLOAD_ROOT = os.path.join(STATIC_DIR, "uploads")
 IMAGES_DIR = os.path.join(UPLOAD_ROOT, "images")   # image files
 LABELS_DIR = os.path.join(UPLOAD_ROOT, "labels")   # YOLO txt files
 JSONS_DIR = os.path.join(UPLOAD_ROOT, "jsons")     # per-image json files
+METADATA_DIR = os.path.join(UPLOAD_ROOT, "metadata")  # per-image metadata files
 NETWORK_MODE_SCRIPT = os.path.join(os.path.dirname(__file__), "scripts", "rpi_network_mode.sh")
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
 os.makedirs(LABELS_DIR, exist_ok=True)
 os.makedirs(JSONS_DIR, exist_ok=True)
+os.makedirs(METADATA_DIR, exist_ok=True)
 
 
 # ----------------------------------------------------------------------
@@ -316,17 +326,30 @@ def to_gps_decimal(gps_data, ref):
 
 
 def extract_metadata(image_path):
+    """Load per-image sidecar metadata (GPS and sensor fields)."""
+    try:
+        return load_metadata_for_image_path(image_path)
+    except Exception:
+        return dict(DEFAULT_METADATA)
+
+
+def geotag_image_with_gps(image_path: str) -> dict:
     """
-    TEMP: disable EXIF parsing for performance testing.
+    Best-effort GPS geotag for an image.
+    Returns metadata dict actually stored/available after attempt.
     """
-    return {
-        "temperature": None,
-        "pressure": None,
-        "humidity": None,
-        "latitude": None,
-        "longitude": None,
-        "user_comment": "",
-    }
+    metadata = extract_metadata(image_path)
+    fix = get_gps_fix()
+    if not fix:
+        return metadata
+
+    metadata["latitude"] = fix.get("latitude")
+    metadata["longitude"] = fix.get("longitude")
+    try:
+        save_metadata_for_image_path(image_path, metadata)
+    except Exception:
+        pass
+    return metadata
 
 
 # ----------------------------------------------------------------------
@@ -851,6 +874,7 @@ def api_image_status(filename):
     if not os.path.exists(image_path):
         return jsonify({"status": "error", "message": "image not found"}), 404
 
+    metadata = extract_metadata(image_path)
     return jsonify(
         {
             "status": "success",
@@ -858,6 +882,7 @@ def api_image_status(filename):
             "is_labeled": is_image_labeled(clean_name),
             "labels_count": labels_count_for_image(clean_name),
             "file_size_bytes": file_size_bytes_for_image(clean_name),
+            "metadata": metadata,
         }
     )
 
@@ -900,12 +925,17 @@ def api_capture_oneshot():
 
     newest = get_sorted_images(IMAGES_DIR)
     latest_filename = newest[0]["filename"] if newest else None
+    latest_metadata = None
+    if latest_filename:
+        latest_path = os.path.join(IMAGES_DIR, latest_filename)
+        latest_metadata = geotag_image_with_gps(latest_path)
 
     return jsonify(
         {
             "status": "success",
             "message": "oneshot completed",
             "latest_filename": latest_filename,
+            "metadata": latest_metadata,
             "stdout": stdout[-500:],
         }
     )
@@ -997,9 +1027,11 @@ def api_esp_capture_proxy():
 
     saved_name = f"esp_{time.strftime('%Y%m%d-%H%M%S')}.jpg"
     saved_path = os.path.join(IMAGES_DIR, saved_name)
+    saved_metadata = dict(DEFAULT_METADATA)
     try:
         with open(saved_path, "wb") as out:
             out.write(data)
+        saved_metadata = geotag_image_with_gps(saved_path)
     except Exception:
         # Keep response usable even if local save fails.
         saved_name = ""
@@ -1012,6 +1044,10 @@ def api_esp_capture_proxy():
     )
     if saved_name:
         resp.headers["X-AgriApp-Filename"] = saved_name
+        if saved_metadata.get("latitude") is not None:
+            resp.headers["X-AgriApp-Latitude"] = str(saved_metadata["latitude"])
+        if saved_metadata.get("longitude") is not None:
+            resp.headers["X-AgriApp-Longitude"] = str(saved_metadata["longitude"])
     return resp
 
 
@@ -1032,6 +1068,7 @@ def image_status():
     if not os.path.exists(image_path):
         return jsonify({"status": "error", "message": "image not found"}), 404
 
+    metadata = extract_metadata(image_path)
     return jsonify(
         {
             "status": "success",
@@ -1039,6 +1076,7 @@ def image_status():
             "is_labeled": is_image_labeled(filename),
             "labels_count": labels_count_for_image(filename),
             "file_size_bytes": file_size_bytes_for_image(filename),
+            "metadata": metadata,
         }
     )
 
@@ -1046,7 +1084,7 @@ def image_status():
 @app.route("/api/v1/images/delete", methods=["POST"])
 def delete_image():
     """
-    Delete an image, its corresponding .txt labels, and its .json (if present).
+    Delete an image, its corresponding .txt labels/.json and metadata sidecar.
     """
     data = request.get_json(silent=True) or {}
     filename = normalize_image_filename(data.get("filename", ""))
@@ -1058,8 +1096,9 @@ def delete_image():
     base, _ = os.path.splitext(filename)
     labels_path = os.path.join(LABELS_DIR, base + ".txt")
     json_path = json_path_for_image(filename)
+    metadata_path = metadata_path_for_image_path(img_path)
 
-    removed = {"image": False, "labels": False, "json": False}
+    removed = {"image": False, "labels": False, "json": False, "metadata": False}
 
     try:
         if os.path.exists(img_path):
@@ -1073,11 +1112,14 @@ def delete_image():
         if os.path.exists(json_path):
             os.remove(json_path)
             removed["json"] = True
+        if os.path.exists(metadata_path):
+            os.remove(metadata_path)
+            removed["metadata"] = True
 
         status = "success"
-        if not any(removed.values()):
+        if not (removed["image"] or removed["labels"] or removed["json"] or removed["metadata"]):
             status = "not_found"
-        elif not all(removed.values()):
+        elif not removed["image"]:
             status = "partial"
 
         return jsonify({"status": status, "removed": removed})
@@ -1088,11 +1130,12 @@ def delete_image():
 @app.route("/api/v1/images/delete-all", methods=["POST"])
 def api_delete_all_images():
     """
-    Delete all images and their related labels/json files.
+    Delete all images and their related labels/json/metadata files.
     """
     removed_images = 0
     removed_labels = 0
     removed_jsons = 0
+    removed_metadata = 0
     errors = []
 
     for name in os.listdir(IMAGES_DIR):
@@ -1107,6 +1150,7 @@ def api_delete_all_images():
         base, _ = os.path.splitext(filename)
         label_path = os.path.join(LABELS_DIR, base + ".txt")
         json_path = json_path_for_image(filename)
+        metadata_path = metadata_path_for_image_path(img_path)
 
         try:
             if os.path.exists(img_path):
@@ -1129,6 +1173,13 @@ def api_delete_all_images():
         except Exception as e:
             errors.append(f"json:{filename}:{e}")
 
+        try:
+            if os.path.exists(metadata_path):
+                os.remove(metadata_path)
+                removed_metadata += 1
+        except Exception as e:
+            errors.append(f"metadata:{filename}:{e}")
+
     status = "success" if not errors else "partial"
     return jsonify(
         {
@@ -1136,6 +1187,7 @@ def api_delete_all_images():
             "removed_images": removed_images,
             "removed_labels": removed_labels,
             "removed_jsons": removed_jsons,
+            "removed_metadata": removed_metadata,
             "errors_count": len(errors),
         }
     )
@@ -1149,6 +1201,7 @@ def download_dataset():
       - image files from IMAGES_DIR -> images/...
       - txt label files from LABELS_DIR -> labels/...
       - json files from JSONS_DIR -> jsons/...
+      - metadata files from METADATA_DIR -> metadata/...
     """
     memory_file = io.BytesIO()
 
@@ -1186,6 +1239,17 @@ def download_dataset():
                 full_path = os.path.join(root, fname)
                 rel_path = os.path.relpath(full_path, JSONS_DIR)
                 arcname = os.path.join("jsons", rel_path)
+                zf.write(full_path, arcname)
+
+        # Add metadata to /metadata (only .json)
+        for root, dirs, files in os.walk(METADATA_DIR):
+            for fname in files:
+                ext = os.path.splitext(fname)[1].lower()
+                if ext != ".json":
+                    continue
+                full_path = os.path.join(root, fname)
+                rel_path = os.path.relpath(full_path, METADATA_DIR)
+                arcname = os.path.join("metadata", rel_path)
                 zf.write(full_path, arcname)
 
     memory_file.seek(0)
@@ -1227,7 +1291,7 @@ def download_dataset_selected():
         return jsonify({"error": "No valid filenames provided"}), 400
 
     memory_file = io.BytesIO()
-    written = {"images": 0, "labels": 0, "jsons": 0}
+    written = {"images": 0, "labels": 0, "jsons": 0, "metadata": 0}
 
     with zipfile.ZipFile(
         memory_file, mode="w", compression=zipfile.ZIP_DEFLATED
@@ -1252,6 +1316,11 @@ def download_dataset_selected():
                 zf.write(json_path, os.path.join("jsons", stem + ".json"))
                 written["jsons"] += 1
 
+            metadata_path = os.path.join(METADATA_DIR, stem + ".json")
+            if os.path.exists(metadata_path):
+                zf.write(metadata_path, os.path.join("metadata", stem + ".json"))
+                written["metadata"] += 1
+
     if written["images"] == 0:
         return jsonify({"error": "No matching images found"}), 404
 
@@ -1268,7 +1337,7 @@ def download_dataset_selected():
 @app.route("/api/v1/images/download-with-labels")
 def download_image_with_labels():
     """
-    Download a zip containing one image and its related label/json files.
+    Download a zip containing one image and its related label/json/metadata files.
 
     Query parameters:
       - image: image filename
@@ -1285,6 +1354,7 @@ def download_image_with_labels():
     stem, _ = os.path.splitext(filename)
     label_path = os.path.join(LABELS_DIR, stem + ".txt")
     json_path = os.path.join(JSONS_DIR, stem + ".json")
+    metadata_path = os.path.join(METADATA_DIR, stem + ".json")
 
     memory_file = io.BytesIO()
     with zipfile.ZipFile(
@@ -1295,6 +1365,8 @@ def download_image_with_labels():
             zf.write(label_path, os.path.join("labels", stem + ".txt"))
         if os.path.exists(json_path):
             zf.write(json_path, os.path.join("jsons", stem + ".json"))
+        if os.path.exists(metadata_path):
+            zf.write(metadata_path, os.path.join("metadata", stem + ".json"))
 
     memory_file.seek(0)
     return send_file(

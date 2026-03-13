@@ -59,7 +59,7 @@ Response fields:
   - `filename`
   - `upload_ts`
   - `upload_time`
-  - `metadata`
+  - `metadata` (`latitude`,`longitude`,`temperature`,`pressure`,`humidity`,`user_comment`)
   - `is_labeled`
   - `labels_count`
 - `page`, `page_size`, `total_items`, `total_pages`
@@ -102,9 +102,37 @@ Success response:
   "status": "success",
   "message": "oneshot completed",
   "latest_filename": "img_20260312-202153.jpg",
+  "metadata": {
+    "latitude": 43.0628742,
+    "longitude": 12.5511522
+  },
   "stdout": "..."
 }
 ```
+
+Notes:
+- On capture, if GPS is available on RPi serial (`/dev/ttyACM0` or `/dev/ttyUSB0` by default), image metadata is geotagged.
+- GPS behavior can be tuned via env vars: `AGRIAPP_GPS_PORTS`, `AGRIAPP_GPS_BAUD`, `AGRIAPP_GPS_TIMEOUT`.
+
+## 5b) ESP capture via RPi proxy
+- Method: `GET`
+- Path: `/api/v1/esp/capture`
+- Query:
+  - `esp_base` (required), e.g. `http://192.168.4.239`
+- Purpose: capture one JPEG from ESP and save it in gallery as `esp_*.jpg`.
+
+Example:
+```bash
+curl --get \
+  --data-urlencode "esp_base=http://192.168.4.239" \
+  -o esp_capture.jpg \
+  "http://192.168.4.1:5000/api/v1/esp/capture"
+```
+
+Notes:
+- Response body is JPEG binary.
+- If locally saved on RPi, response includes header `X-AgriApp-Filename`.
+- If RPi GPS fix is available, response may include `X-AgriApp-Latitude` and `X-AgriApp-Longitude`, and metadata is saved for that gallery image.
 
 ## 6) Network mode (RPi)
 - Method: `GET`
