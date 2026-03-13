@@ -1,0 +1,51 @@
+\section{Introduction}
+
+\subsection{Background and Research Context}
+Precision agriculture has progressively shifted from intuition-driven practice to data-driven decision making. In this transition, image data has become a critical asset because it supports monitoring of crop conditions, pest presence, and environmental trends at high temporal frequency. While many studies focus on detection models and classification accuracy, field operations often reveal that the weakest link is not the model itself, but the data pipeline that precedes model training and evaluation. In practice, acquiring, organizing, reviewing, and annotating image data in unstable outdoor conditions remains a non-trivial engineering challenge.
+
+AgriApp Control is developed exactly in this gap between theoretical model development and practical edge deployment. The project is based on the assumption that robust data collection infrastructure is a prerequisite for reliable AI workflows in agriculture. The core operational unit is a Raspberry Pi node that is physically deployed near the target area and acts as both acquisition device and service endpoint. Around this core, the system offers a coherent software stack for image capture, gallery browsing, manual annotation, device management, and client access from web and tablet interfaces.
+
+The motivation for this architecture is pragmatic. Agricultural scenarios are frequently characterized by intermittent network quality, constrained power budgets, long unattended operation windows, and the need for direct on-site intervention by non-specialist users. A desktop-centric workflow is therefore unsuitable. Instead, the system must tolerate network changes, expose simple operational controls, and remain functional even when cloud services are unavailable.
+
+\subsection{Problem Statement}
+Before consolidation into a single platform, the operational workflow was fragmented across standalone scripts, ad-hoc pages, and command-line maintenance actions over SSH. This fragmentation introduced several concrete inefficiencies. First, image capture and annotation lived in disconnected tools, increasing the risk of inconsistency between raw images and label files. Second, system-level actions such as restart, reboot, or network recovery were not integrated into a unified interface, forcing operators to switch contexts under field pressure. Third, network mode changes between standard Wi-Fi and fallback access-point operation caused repeated manual reconfiguration and discovery overhead.
+
+From an engineering perspective, the key problem can be formulated as follows: how to design an edge software platform that keeps the full data lifecycle coherent while remaining operationally simple in non-ideal network environments. ``Coherent'' here means that data artifacts, UI state, and backend semantics remain aligned; ``operationally simple'' means that daily actions are achievable from a compact control surface, without requiring direct shell access for routine tasks.
+
+AgriApp Control addresses this by standardizing interactions around a versioned API layer (\texttt{/api/v1}), by unifying web and tablet behavior on the same contracts, and by introducing explicit operational primitives for field use. The design choice is not merely stylistic: it directly reduces failure modes caused by duplicated logic and incompatible assumptions across clients.
+
+\subsection{Project Vision and Objectives}
+The long-term vision of the project is to provide a reusable edge software baseline for agricultural image collection campaigns, where reliability and maintainability are treated as first-class requirements. The current implementation is therefore not limited to ``capturing photos''; it aims to make acquisition, inspection, annotation, and maintenance part of one deterministic workflow.
+
+The first objective is capture reliability. The system must support deterministic one-shot acquisition and unattended periodic capture from Raspberry Pi, while also allowing optional integration of ESP32-CAM devices. This requires stable file handling and a naming policy that avoids ambiguity across capture sources.
+
+The second objective is lifecycle consistency. Images, labels, and metadata must evolve together: when an image is created, viewed, labeled, downloaded, or deleted, related artifacts should follow predictable rules. This includes synchronization between JSON annotation state and YOLO TXT exports, as well as coherent behavior in web and tablet galleries.
+
+The third objective is operational control under constraints. In edge deployments, failures are often operational rather than algorithmic. For this reason, the platform must expose high-value maintenance actions through API and UI, including server restart, device reboot, and controlled poweroff, with suitable confirmation mechanisms for destructive operations.
+
+The fourth objective is network resilience. The same software instance should remain usable across multiple Wi-Fi environments and in AP rescue mode. Discovery and client behavior must be fast enough for field use, privileging cache-first strategies and minimizing unnecessary scans.
+
+Finally, the fifth objective is maintainable evolution. The platform should be extendable without repeated rewrites by enforcing modular frontend organization, clear backend boundaries, and versioned endpoint semantics.
+
+\subsection{System Perspective}
+From a systems viewpoint, AgriApp Control can be interpreted as a local edge service platform with three tightly connected layers. The data layer stores images and annotation artifacts in a transparent file hierarchy. The service layer, implemented in Flask, exposes capture, gallery, labeling, download, and control endpoints. The presentation layer is split between a browser-based UI and a tablet app written in Kotlin/Compose, both consuming the same backend abstractions.
+
+This architecture intentionally keeps cloud dependency optional. By design, the platform remains useful even in isolated network conditions, where local operation is not a fallback but the primary mode. The resulting trade-off is a stronger emphasis on local robustness, explicit file lifecycle handling, and clear operator-facing flows.
+
+\subsection{Stakeholders and Operational Roles}
+The project involves three practical user roles. The operator is concerned with capture execution and immediate quality checks. The annotator focuses on bounding-box review and semantic consistency of labels. The maintainer manages deployment, service health, and network transitions between environments such as office, home, and field locations.
+
+These roles are not necessarily assigned to different people; in small research settings, one person often plays all three. This overlap is precisely why the interface must remain compact and coherent: operational context switching should not require tool switching.
+
+\subsection{Scope of This Thesis-Style Report}
+This document describes the software from requirements to operations, with emphasis on engineering rationale and implementation coherence. The report covers functional and non-functional requirements, architectural decomposition, module responsibilities, API contracts, deployment strategy, validation flows, and maintenance procedures.
+
+The current scope excludes large-scale cloud orchestration, advanced multi-user authorization policies, and end-to-end MLOps automation for training and model registry integration. These elements are acknowledged as future work, but are intentionally separated from the present edge-first baseline in order to preserve implementation focus and deployment reliability.
+
+\subsection{Methodological Notes}
+The development approach adopted in this project is iterative and operation-driven. Features are not introduced solely based on abstract architecture plans, but are validated against real usage patterns, including network switches, device restarts, and on-site maintenance constraints. This leads to a design style where API consistency and operational predictability are treated as testable qualities, not secondary documentation topics.
+
+In practical terms, this methodology favors: versioned endpoints, backwards-compatible transitions, explicit confirmation for high-impact actions, and immediate deployment feedback through synchronized web/tablet behavior. The same principle guides the documentation effort: the software description is organized to reflect how the system is actually used and evolved, not only how it is logically decomposed.
+
+\subsection{Reading Guide}
+The next sections are organized to move from what the system must do (requirements), to how it is structured (architecture and modules), to how it is implemented and operated (API, deployment, testing, and maintenance). This progression is intended to support both technical reviewers and future maintainers who need a reliable reference for extending the platform without breaking field-proven behavior.

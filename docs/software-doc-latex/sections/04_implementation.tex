@@ -1,0 +1,71 @@
+\section{Implementation}
+
+\subsection{Project Structure}
+To make implementation details easier to navigate, the repository follows a modular folder organization.  
+The following tree reports the main directories and files relevant to software development and operations:
+
+\begin{verbatim}
+agri-app/
+|-- backend/                  # Capture and backend-side Python modules
+|-- docs/                     # Technical documentation
+|   `-- software-doc-latex/   # This LaTeX report
+|-- firmware/
+|   `-- esp32-cam/            # ESP32-CAM firmware and helper scripts
+|-- mobile/
+|   `-- android/              # Android tablet application (Kotlin/Compose)
+|-- old/                      # Deprecated/archived scripts
+|-- scripts/                  # Runtime and deployment helper scripts
+|-- static/                   # Web assets (CSS/JS, uploads)
+|-- systemd/                  # User service unit templates
+|-- templates/                # Flask HTML templates
+|-- client.py                 # Raspberry capture client entry point
+|-- server.py                 # Flask backend entry point
+|-- deploy_rpi.sh             # Sync/mount/reload deployment workflow
+|-- README.md                 # Main project overview
+`-- TODO.md                   # Active roadmap and task list
+\end{verbatim}
+
+This structure reflects the project's edge-first design: backend logic, web interface, mobile control application, and deployment utilities are co-located and versioned together.
+
+\subsection{Backend}
+The backend is implemented in Python using Flask as the application framework. The implementation follows a service-oriented structure in which routing, file lifecycle management, capture orchestration, and control operations are centralized in a single execution node on Raspberry Pi. This choice favors deployment simplicity and operational transparency in edge scenarios.
+
+The API layer is progressively consolidated under the versioned namespace \texttt{/api/v1}. Versioning is treated as a contract boundary: clients are expected to integrate against stable endpoint semantics, while selected legacy aliases are preserved only to support controlled migration. This approach allows iterative evolution without abrupt client breakage.
+
+From an implementation standpoint, the backend handles four major responsibilities. First, it coordinates image acquisition operations, both local camera one-shot and ESP proxy-based capture. Second, it provides paginated gallery access and status inspection endpoints, designed to keep payloads bounded under large datasets. Third, it manages annotation persistence and conversion between JSON state and YOLO TXT exports. Fourth, it exposes system-level operations such as server restart, reboot, and poweroff through explicit HTTP actions.
+
+The backend intentionally avoids opaque persistence layers for core artifacts. Image and annotation data are stored in a deterministic filesystem hierarchy, making debugging, backup, and audit operations straightforward for maintainers.
+
+\subsection{Web Frontend}
+The web frontend is implemented as a lightweight static interface composed of HTML templates, CSS stylesheets, and modular JavaScript files. The architectural decision here is to keep the browser client thin and delegate authoritative state management to backend endpoints.
+
+Implementation is split into two main JavaScript modules. The gallery module handles pagination, filtering, modal navigation, dataset downloads, and item-level actions. The labeler module handles bounding-box interaction, class assignment, TP/FP status, and annotation save/load workflows. This separation is not purely organizational; it prevents cross-feature coupling and makes incremental refactoring feasible.
+
+UI behavior is aligned with backend state through explicit API calls rather than hidden shared state. After critical operations such as save or delete, the frontend re-queries server data to avoid stale local assumptions. This pattern improves correctness under concurrent use and across network mode transitions.
+
+\subsection{Android App}
+The Android tablet client is implemented in Kotlin with Jetpack Compose for UI and Retrofit for HTTP integration. The app follows a state-driven model where UI is derived from a central view-model state and updated through asynchronous API operations.
+
+A key implementation goal for the tablet client is operational clarity in field use. For this reason, the interface is organized around three practical areas: connection management and discovery, capture and system actions, and gallery inspection. Destructive operations are guarded by explicit confirmation dialogs, while device control actions are grouped in a dedicated ``System'' dialog to avoid accidental activation during routine browsing.
+
+Discovery logic is implemented with a cache-first strategy. Recently valid hosts are persisted locally and tested before deeper subnet scans. The implementation also adapts behavior to network context, for example skipping ESP discovery in standard Wi-Fi scenarios where it is not expected.
+
+The Android app reuses backend pagination and status semantics rather than reproducing custom data logic. This design keeps behavior aligned with web workflows and reduces divergence risk over time.
+
+\subsection{Storage Layout}
+The storage layout is file-based and intentionally explicit. Image binaries are stored under \texttt{static/uploads/images}, YOLO label exports under \texttt{static/uploads/labels}, and full annotation state under \texttt{static/uploads/jsons}. This tripartite structure directly mirrors the operational workflow: acquisition, review/annotation, and training-oriented export.
+
+File naming conventions encode capture origin where relevant (e.g., Raspberry Pi vs ESP), improving traceability during mixed-source campaigns. During deletion operations, the implementation enforces coordinated cleanup across image, label, and JSON artifacts to reduce orphaned files.
+
+This storage strategy is deliberately simple. While database-backed approaches can offer richer indexing, the chosen model provides strong practical advantages for edge deployments: low dependency footprint, easy manual inspection, and trivial off-device backup through standard filesystem tools.
+
+\subsection{Implementation Trade-offs}
+The current implementation prioritizes reliability and maintainability over maximal abstraction. Several trade-offs are explicit:
+
+\begin{itemize}
+  \item \textbf{Single-node service concentration}: backend and capture logic on Raspberry Pi reduce deployment complexity but increase local responsibility.
+  \item \textbf{Filesystem persistence}: easier operations and debugging, with reduced indexing capabilities compared to database systems.
+  \item \textbf{API-centric consistency}: stronger cross-client coherence at the cost of stricter contract discipline.
+\end{itemize}
+
+These trade-offs are considered acceptable for the present project phase, where field robustness and reproducible workflows are primary goals.

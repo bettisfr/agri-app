@@ -1,0 +1,72 @@
+\section{Architecture}
+
+\subsection{High-Level View}
+The architecture of AgriApp Control adopts an edge-first paradigm in which the Raspberry Pi represents the central execution node. This decision is driven by deployment reality: the device must remain autonomous for capture and management tasks even when external connectivity is degraded or unavailable. Unlike cloud-centric designs, this architecture places operational continuity at the edge and treats remote integration as an extension, not as a prerequisite.
+
+At a structural level, the system is composed of three cooperating tiers. The first tier is the data and acquisition tier, responsible for camera interaction and file persistence. The second tier is the service tier, implemented with Flask, which exposes application logic through HTTP APIs. The third tier is the client tier, which includes a browser-based interface and an Android tablet application. Both clients are designed to consume the same backend semantics, reducing divergence and maintenance overhead.
+
+The Raspberry Pi therefore plays a dual role: it is both an acquisition endpoint and an application server. This dual role simplifies deployment and makes local operations deterministic. An optional ESP32-CAM can be attached to the ecosystem as a secondary image source. In this case, Raspberry Pi acts as a proxy and orchestration point, so clients can keep a single control flow even when direct ESP connectivity is unstable.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners, align=center, minimum height=10mm, minimum width=30mm, font=\small},
+    edge/.style={-{Latex[length=2mm]}, thick},
+    dashededge/.style={-{Latex[length=2mm]}, thick, dashed}
+]
+% Client side
+\node[box] (web) {Web UI\\(\texttt{/gallery}, \texttt{/label})};
+\node[box, below=8mm of web] (tablet) {Android Tablet\\(AgriApp Control)};
+\node[draw, rounded corners, fit=(web)(tablet), inner sep=4mm, label=above:{\small Client Tier}] (clientfit) {};
+
+% Edge core
+\node[box, right=42mm of web, yshift=-8mm] (server) {Flask Backend\\(\texttt{/api/v1})};
+\node[box, below=8mm of server] (storage) {Local Storage\\images / labels / jsons};
+\node[box, above=8mm of server] (rpicam) {RPi Camera\\Capture Module};
+\node[draw, rounded corners, fit=(rpicam)(server)(storage), inner sep=5mm, label=above:{\small Edge Node: Raspberry Pi}] (edgefit) {};
+
+% Optional ESP
+\node[box, right=38mm of server] (esp) {ESP32-CAM\\(optional source)};
+
+% Flows
+\draw[edge] (web.east) -- node[above, font=\scriptsize] {HTTP} (server.west);
+\draw[edge] (tablet.east) -- node[below, font=\scriptsize] {HTTP} (server.west);
+\draw[edge] (rpicam) -- node[right, font=\scriptsize] {capture} (server);
+\draw[edge] (server) -- node[right, font=\scriptsize] {read/write} (storage);
+\draw[dashededge] (server.east) -- node[above, font=\scriptsize] {proxy capture} (esp.west);
+\end{tikzpicture}
+\caption{High-level architecture of AgriApp Control.}
+\label{fig:agriapp-architecture}
+\end{figure}
+
+\subsection{Data Flow}
+The runtime data flow begins with image acquisition. A capture event, generated either from scheduled logic or from a manual one-shot request, produces an image file that is stored in the local image repository. The storage path is intentionally transparent, so operators and maintainers can inspect and back up data without relying on opaque databases.
+
+Once images are available, clients retrieve paginated views through API calls. Pagination is performed server-side to keep response payloads bounded and predictable, especially under large datasets. This choice is crucial for tablet responsiveness and for constrained networks.
+
+When an image enters the annotation phase, the labeler workflow maintains two synchronized outputs. JSON files store the full annotation state, including information required for UI reconstruction and status semantics. YOLO TXT files store training-compatible entries, preserving interoperability with common computer vision pipelines. This dual-output strategy separates operational richness from model-training compatibility.
+
+Deletion operations close the lifecycle. Single-item deletion and bulk deletion both enforce artifact consistency by removing related label files together with image files. In this way, the architecture minimizes orphaned metadata and dataset drift.
+
+\subsection{Network Modes}
+Network behavior is modeled as a first-class architectural concern. The system supports two principal modes: Wi-Fi client mode and AP rescue mode. In Wi-Fi client mode, Raspberry Pi joins an existing infrastructure network and exposes services through its assigned address. This mode is the default in office, home, or campus environments.
+
+AP rescue mode is designed for field continuity. When infrastructure Wi-Fi is unavailable or unsuitable, Raspberry Pi can expose a local access point and continue to provide full control APIs and user interfaces. This prevents operational dead-ends and allows maintenance, capture control, and gallery operations directly on site.
+
+The architecture also includes practical mechanisms for multi-network portability, such as preconfigured Wi-Fi profiles and deterministic fallback logic. Discovery behavior in clients reflects this model by adapting scan strategy to the active subnet and by favoring cached known hosts before expensive full-range probing.
+
+\subsection{Service and Interface Boundaries}
+The backend exposes a versioned API namespace under \texttt{/api/v1}. Versioning is not treated as documentation formality; it defines a stable contract layer across clients and enables controlled evolution of the platform. Legacy routes can be retained as aliases during migration windows, but the architectural direction remains strongly centered on versioned endpoints.
+
+Client responsibilities are intentionally limited. The web gallery and the tablet app focus on orchestration, visualization, and interaction, while state authority remains in the backend. This separation avoids duplicated business rules in frontend code and preserves consistency when multiple clients operate on the same dataset.
+
+\subsection{Architectural Rationale}
+From an engineering perspective, the chosen architecture prioritizes robustness, observability, and maintainability over maximal feature density. File-based persistence, explicit lifecycle operations, and API-centric coordination may appear conservative, but they produce strong operational benefits in edge deployments:
+\begin{itemize}
+  \item reduced dependency on external services,
+  \item simpler failure diagnosis,
+  \item easier reproducibility of field workflows,
+  \item lower coupling between interfaces and backend logic.
+\end{itemize}
+
+This rationale aligns with the project objective of building a field-ready software baseline rather than a monolithic experimental prototype. The architecture is therefore intentionally incremental: it is stable enough for real use, but modular enough to support future extensions such as richer analytics, authentication layers, or cloud synchronization connectors.

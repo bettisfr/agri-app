@@ -1,0 +1,64 @@
+\section{Testing and Validation}
+
+\subsection{Validation Philosophy}
+In AgriApp Control, testing is treated as an operational assurance process, not only as a code-level quality gate. Since the platform is deployed on edge hardware and used in variable network environments, validation must cover both software correctness and runtime behavior under realistic conditions.
+
+For this reason, test activities are structured across multiple layers: backend endpoint behavior, client integration behavior, and deployment/runtime continuity. A feature is considered validated only when these layers remain coherent after synchronization and service reload.
+
+\subsection{Backend Validation}
+Backend validation starts from endpoint correctness and contract stability. Health, system status, capture, gallery, labels, and control routes are verified through direct HTTP calls. This step confirms that request/response schemas remain compatible with clients and that versioned endpoints under \texttt{/api/v1} are operational.
+
+Capture validation includes both one-shot Raspberry Pi acquisition and ESP proxy-based acquisition. In both cases, the expected outcome is not limited to a success response: generated artifacts must appear in the correct storage paths and be consumable by gallery endpoints.
+
+Deletion and lifecycle validation are equally critical. Single-image and bulk deletion operations are checked for consistency across image binaries and related annotation files. The goal is to prevent orphaned artifacts and silent divergence between gallery and labeling state.
+
+\subsection{Web and Labeler Validation}
+Web validation focuses on end-user workflows rather than isolated UI rendering. The gallery must correctly handle pagination, modal opening, navigation between images, status refresh, and deletion actions. The labeler must preserve annotation state through save/load cycles, including class and TP/FP semantics.
+
+Particular attention is given to state synchronization after mutations. After save or delete operations, the UI should reflect backend truth and avoid stale local assumptions. This behavior is verified through repeated interaction cycles rather than one-time checks.
+
+\subsection{Android Client Validation}
+Tablet validation combines API integration, discovery behavior, and interaction safety. The app must:
+\begin{itemize}
+  \item discover reachable Raspberry Pi endpoints quickly;
+  \item use paginated gallery contracts consistently;
+  \item execute capture actions (RPi and ESP proxy) and render results;
+  \item execute system control actions through confirmed flows.
+\end{itemize}
+
+Validation also includes UI-level safeguards for high-impact operations (delete-all, reboot, poweroff), ensuring that destructive actions require explicit confirmation and produce clear feedback in logs/status components.
+
+\subsection{Network-Mode Validation}
+Because deployment environments are heterogeneous, testing includes explicit network-mode checks. In infrastructure Wi-Fi mode, clients must connect through known subnet endpoints with minimal discovery overhead. In AP rescue mode, the same core operations must remain available without dependence on external routers.
+
+Mode transitions are tested as workflows, not as isolated toggles. This means validating that, after switching network context, discovery, status retrieval, gallery access, and capture controls remain functional without manual repair steps.
+
+\subsection{Regression Strategy}
+The project follows an iterative ``change-verify-sync'' cycle. After meaningful modifications:
+\begin{enumerate}
+  \item local compile/build checks are executed (\texttt{py\_compile}, Gradle, LaTeX where relevant);
+  \item functional checks are run on impacted workflows;
+  \item artifacts are synchronized to Raspberry Pi;
+  \item backend service is reloaded and critical endpoints are rechecked.
+\end{enumerate}
+
+This strategy is intentionally pragmatic. It provides rapid feedback while keeping regression risk low in a system where backend, web frontend, and mobile client evolve together.
+
+\subsection{Acceptance Criteria}
+A deployment iteration is considered acceptable when the following conditions are simultaneously met:
+\begin{itemize}
+  \item backend API v1 endpoints respond with expected schemas;
+  \item one-shot capture updates gallery state correctly;
+  \item gallery pagination and label workflows remain consistent;
+  \item Android app build/install/run sequence succeeds;
+  \item system control actions are available and safely guarded;
+  \item network mode switching does not break baseline operations.
+\end{itemize}
+
+These criteria emphasize system-level coherence, which is the primary success metric for an edge control platform.
+
+\subsection{Residual Risks}
+Even with systematic validation, residual risks remain. Environmental factors such as unstable power, camera hardware variability, and wireless interference can produce intermittent failures not reproducible in lab conditions. Therefore, test outcomes are interpreted together with operational logs and field observations.
+
+This reinforces a key principle of the project: testing is not a final phase, but a continuous process coupled with deployment and daily operation.
+

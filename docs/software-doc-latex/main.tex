@@ -1,0 +1,59 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[italian,english]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit}
+
+\geometry{margin=2.0cm}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!50!black,
+  citecolor=blue!50!black
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible
+}
+
+\title{AgriApp Control\\Software Documentation}
+\author{Project Team}
+\date{\today}
+
+\begin{document}
+
+\selectlanguage{english}
+\maketitle
+\tableofcontents
+\clearpage
+
+\include{sections/01_introduction}
+\include{sections/02_requirements}
+\include{sections/03_architecture}
+\include{sections/04_implementation}
+\include{sections/05_modules}
+\include{sections/06_api}
+\include{sections/07_deployment}
+\include{sections/08_testing}
+\include{sections/09_operations}
+\include{sections/10_future_work}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

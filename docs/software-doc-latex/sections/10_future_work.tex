@@ -1,0 +1,45 @@
+\section{Future Work}
+
+\subsection{Roadmap Perspective}
+Future work in AgriApp Control should preserve the current design philosophy: practical reliability first, then progressive feature expansion. The platform already provides a stable edge baseline for capture, labeling, and control workflows. The next steps should therefore focus on extending capabilities without reintroducing fragmentation between clients or weakening operational clarity.
+
+In this context, roadmap planning benefits from a layered approach: first consolidate contracts and usability, then extend automation and analytics, and finally evaluate broader ecosystem integrations.
+
+\subsection{API and Contract Consolidation}
+The first evolution line is full convergence on \texttt{/api/v1}. Although legacy aliases are still active for compatibility, the long-term direction is a single authoritative API surface. Completing this migration will simplify client maintenance, reduce regression risk, and improve documentation quality.
+
+A related step is strengthening contract-level validation, including stricter schema checks and clearer error semantics for edge cases. This would improve robustness in multi-client scenarios and make integrations easier for external tools.
+
+\subsection{Capture and Data Acquisition Enhancements}
+Future capture improvements should prioritize operator value over parameter proliferation. A practical direction is introducing curated capture presets with optional advanced tuning pages, keeping the default experience simple while enabling deeper control for expert users.
+
+Another relevant direction is richer capture telemetry, such as capture latency metrics, camera state diagnostics, and reliability counters. These additions would support evidence-based tuning and easier post-deployment troubleshooting.
+
+\subsection{Gallery and Annotation Workflow Extensions}
+On the gallery side, future work can include richer filtering, sorting, and selection workflows tailored to large datasets. On the annotation side, quality-of-life features such as smarter navigation shortcuts, consistency checks, and annotation review queues could improve throughput and reduce labeling variance.
+
+A complementary direction is explicit annotation quality reporting (for example, disagreement flags, coverage summaries, or TP/FP distribution dashboards) to support dataset curation decisions before model training.
+
+\subsection{Operational Automation}
+Operational automation should evolve in controlled steps. Potential improvements include policy-driven cleanup tasks, scheduled exports, and configurable alerts for storage thresholds or service anomalies. The objective is to reduce manual maintenance load without hiding critical system behavior from maintainers.
+
+In edge environments, automation must remain inspectable and overrideable. For this reason, future automation features should include clear status visibility and manual fallback paths.
+
+\subsection{Security and Access Control}
+Current operation assumes a trusted environment, which is often acceptable in controlled research settings. For broader deployment, security hardening becomes necessary. Future work may include authentication for sensitive endpoints, role-based authorization for destructive actions, and optional token-based API protection.
+
+Security evolution should be incremental to avoid disrupting existing workflows. A staged rollout with compatibility modes is preferable to a hard switch in edge systems already in active use.
+
+\subsection{Integration with External Storage and Ecosystems}
+Another future line is integration with external storage backends and synchronization targets. While current workflows can rely on manual export, selective automated synchronization could reduce operational friction in long campaigns. Any such integration should preserve offline-first operability and avoid making cloud availability a hard dependency.
+
+Beyond storage, future interoperability may include tighter integration with dataset management or training pipelines. The key design constraint remains the same: preserve clear boundaries between edge control logic and downstream ML infrastructure.
+
+\subsection{Scalability and Multi-Node Scenarios}
+The current architecture is optimized for a single edge node. An important long-term extension is multi-node coordination, where multiple Raspberry Pi units collect data in parallel. This would require additional components for node identity, aggregated monitoring, and conflict-free dataset ingestion.
+
+Such scaling should be approached carefully, ensuring that single-node reliability is not sacrificed while introducing distributed capabilities.
+
+\subsection{Final Outlook}
+AgriApp Control is already a functional and field-validated edge platform. Its future evolution should maintain this pragmatic foundation while extending capability in measured steps. If roadmap priorities remain aligned with operational realities, the system can grow from a robust single-node solution into a broader edge data collection framework without losing maintainability.
+

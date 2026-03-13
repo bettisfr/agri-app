@@ -1,0 +1,28 @@
+\section{Requirements}
+
+\subsection{Functional Requirements}
+This section defines the software requirements that guide implementation decisions in AgriApp Control. Requirements are expressed with an operational perspective, meaning that each requirement is evaluated not only for logical correctness but also for practical usability in field conditions.
+
+At the core of the system, image acquisition is a mandatory function. The Raspberry Pi camera must support both one-shot capture and unattended periodic acquisition. One-shot capture is needed for manual validation and fast operator control, while periodic capture supports dataset growth and long-running monitoring campaigns. In addition, the platform must support an optional ESP32-CAM source that can be triggered through Raspberry Pi proxy APIs. This requirement is particularly relevant when direct client-to-ESP communication is unstable or unavailable.
+
+Image lifecycle management is another central functional area. The system must provide a gallery where images are listed through server-side pagination, opened individually, and inspected through a coherent interface. Operators must be able to delete single items and, when required, clear the whole gallery. Deletion behavior must be deterministic: related artifacts, such as labels and JSON annotation files, must be handled according to explicit rules so that partial or inconsistent states are minimized.
+
+Annotation support is a first-class requirement, not an accessory feature. The platform must allow creation and update of bounding-box labels, class assignment, and TP/FP state management. Label persistence must be dual-format: JSON for complete annotation state reconstruction and YOLO TXT for training-oriented interoperability. The requirement here is not only ``saving labels'' but preserving semantic consistency across formats.
+
+System control operations are also part of functional scope. The software must expose controlled actions for server restart, full reboot, and poweroff. These actions must be accessible through API and user interface with suitable confirmation flows for destructive operations. The goal is to remove dependency on shell access for routine maintenance, while keeping behavior predictable and auditable.
+
+\subsection{Non-Functional Requirements}
+Non-functional requirements in AgriApp Control are strongly tied to reliability and maintainability under real deployment constraints. The first non-functional requirement is network resilience. The platform must operate correctly in Wi-Fi client mode and in AP rescue mode, because edge nodes can be moved across heterogeneous environments with changing connectivity conditions. Recovery paths must remain available even when external infrastructure is missing.
+
+API stability is the second major non-functional requirement. Endpoint contracts must be versioned under \texttt{/api/v1} and should evolve in a backward-aware manner. Legacy routes may be temporarily preserved for compatibility, but new development should rely on versioned interfaces to prevent fragmentation between clients.
+
+Performance and responsiveness are required at interaction level. Discovery, gallery navigation, and routine operations should remain sufficiently fast on low-power devices and non-ideal networks. This requirement motivates design choices such as cache-first discovery and server-side pagination.
+
+Maintainability is another explicit quality attribute. Backend and frontend code should remain modular and coherent, with minimal duplication between web and tablet clients. Shared semantics must be implemented through common API contracts rather than replicated business logic. In practical terms, this reduces long-term regression risk and simplifies incremental feature development.
+
+Finally, operational safety is required for high-impact actions. System-level operations must include explicit user confirmation, and the software should prefer predictable behavior over aggressive automation when failures might lead to data loss or device unavailability.
+
+\subsection{Requirement Traceability Perspective}
+To keep development aligned with objectives, each implemented feature should be traceable to one or more requirements from this section. For example, server-side pagination and page navigation satisfy both functional gallery requirements and non-functional responsiveness constraints. Similarly, the migration toward \texttt{/api/v1} endpoints satisfies API stability and maintainability requirements at the same time.
+
+This traceability perspective is essential for future extensions, because it allows maintainers to evaluate whether a proposed change improves the system along intended dimensions or introduces inconsistent behavior. In an edge-first project, where operational complexity can grow quickly, such alignment is a practical necessity rather than documentation overhead.

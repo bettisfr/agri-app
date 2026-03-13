@@ -1,0 +1,56 @@
+\section{Deployment}
+
+\subsection{Deployment Strategy}
+Deployment in AgriApp Control is designed as an operational workflow rather than a one-time installation step. The core principle is reproducibility: the same sequence used during development should remain valid in field transitions, with minimal manual intervention. For this reason, synchronization, service reload, and runtime checks are integrated into script-driven procedures.
+
+The deployment target is the Raspberry Pi edge node, which hosts both capture logic and backend APIs. Client applications (web and Android tablet) are deployed independently but validated against the same backend contract. This separation enables rapid UI iterations while preserving server-side stability.
+
+\subsection{Raspberry Pi Deployment Pipeline}
+The Raspberry Pi pipeline is based on incremental synchronization from the development machine to the remote edge directory. This approach avoids full image reflashing for routine updates and supports fast correction cycles after backend or static-asset modifications.
+
+After synchronization, the backend service is reloaded through user-level \texttt{systemd} control. Service lifecycle visibility is therefore explicit: maintainers can inspect active status, restart behavior, and startup integration with standard tools. From a reliability perspective, this is preferable to manually launched background processes, which are less observable and harder to recover after reboot.
+
+The deployment pipeline typically includes:
+\begin{enumerate}
+  \item code synchronization to Raspberry Pi;
+  \item backend service reload/restart;
+  \item health/API sanity checks;
+  \item optional functional checks (capture, gallery, control actions).
+\end{enumerate}
+
+This sequence is intentionally lightweight so that it can be executed frequently, including before on-site relocation.
+
+\subsection{Service Initialization and Runtime}
+In production-like operation, backend startup is handled by \texttt{systemd} user services. This ensures that service behavior is deterministic across reboots and that recovery actions (restart/reboot/poweroff) remain coherent with the process supervision model.
+
+Capture execution can be triggered in two ways: immediate one-shot actions and unattended periodic workflows. The deployment model must preserve both, because they serve different operational objectives. One-shot capture supports validation and debugging, while periodic capture supports long-term dataset accumulation.
+
+From an implementation standpoint, environment configuration (e.g., virtual environment paths, capture interval, and network mode dependencies) should be treated as deployment-time parameters, not hardcoded assumptions.
+
+\subsection{Android Client Deployment}
+The Android tablet application is deployed as an APK built with Gradle and installed via ADB during development and validation phases. What matters operationally is not only installation success but integration success: after install, the app must correctly discover the edge node, retrieve status data, browse gallery pages, and execute capture/control actions.
+
+Because the tablet is used as a field control interface, deployment validation always includes network-context checks. In practice, the app should remain functional both in infrastructure Wi-Fi mode and in AP rescue mode, with discovery logic adapting to the active subnet and cached known hosts.
+
+\subsection{Network Portability and Multi-Site Operation}
+Field deployment often requires moving the same Raspberry Pi between different locations (for example, home, office, and rural test site). The deployment strategy therefore includes explicit multi-profile Wi-Fi configuration with autoconnect priorities. This allows the node to reconnect automatically to known networks without manual reconfiguration at every relocation.
+
+When no known infrastructure network is available, AP rescue mode provides continuity. In this mode, Raspberry Pi acts as a local access point and remains manageable through the same application interfaces. Architecturally, this fallback is not secondary; it is part of the primary deployment design.
+
+\subsection{Pre-Deployment Checklist}
+Before relocating the node to a field site, the following checks should be completed:
+\begin{itemize}
+  \item backend service is active and healthy;
+  \item one-shot capture produces expected image artifacts;
+  \item gallery listing and pagination are responsive;
+  \item tablet app can perform discovery and control actions;
+  \item target Wi-Fi profiles and priorities are correctly configured.
+\end{itemize}
+
+Executing this checklist reduces the probability of on-site failures that are costly to debug remotely.
+
+\subsection{Post-Deployment Validation}
+After physical installation, validation focuses on runtime continuity under actual environmental conditions. Connectivity, capture, API responsiveness, and control operations should be verified as an integrated workflow. Particular attention should be paid to recovery actions, because robust restart and fallback behavior are often more important than peak throughput in edge deployments.
+
+In summary, deployment quality in AgriApp Control is defined by operational reliability over time, not by installation completion alone.
+
