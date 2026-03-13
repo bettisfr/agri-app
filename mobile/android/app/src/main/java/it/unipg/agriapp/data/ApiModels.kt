@@ -27,6 +27,9 @@ data class CaptureResponse(
 data class ImageItem(
     val filename: String = "",
     val upload_time: String = "",
+    val file_size_bytes: Long = 0,
+    val image_width: Int? = null,
+    val image_height: Int? = null,
     val is_labeled: Boolean = false,
     val labels_count: Int = 0
 )
@@ -54,5 +57,21 @@ data class NetworkModeResponse(
     val ap_connection: String? = null,
     val wifi_connection: String? = null,
     val active_wifi_connections: List<String> = emptyList(),
+    val message: String? = null
+)
+
+data class ActionResponse(
+    val status: String = "",
+    val message: String? = null,
+    val timestamp: Long? = null
+)
+
+data class DeleteImageRequest(
+    val filename: String
+)
+
+data class DeleteImageResponse(
+    val status: String = "",
+    val removed: Map<String, Boolean>? = null,
     val message: String? = null
 )

@@ -154,3 +154,9 @@ Error response (example):
 - Timeout suggestion: connect 5s, read 30s.
 - For `capture/oneshot`, show progress and allow up to ~90s before timeout.
 - For discovery MVP, allow manual IP first (`192.168.1.67`) then optional LAN scan.
+
+## Legacy cleanup status
+- Legacy aliases `/get_labels`, `/save_labels`, and `/delete-image` have been removed.
+- Use only:
+  - `GET/POST /api/v1/labels`
+  - `POST /api/v1/images/delete`

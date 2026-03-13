@@ -190,7 +190,7 @@ def capture_photo(
 ) -> str | None:
     os.makedirs(IMAGE_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    file_path = os.path.join(IMAGE_DIR, f"img_{timestamp}.jpg")
+    file_path = os.path.join(IMAGE_DIR, f"rpi_{timestamp}.jpg")
 
     camera_cmd = which("rpicam-still") or which("libcamera-still")
     if not camera_cmd:

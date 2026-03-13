@@ -11,6 +11,8 @@ This folder contains the ESP32-CAM sketch and camera server sources used by Agri
 ## Wi-Fi credentials
 1. Copy `secrets.example.h` to `secrets.h`.
 2. Set `WIFI_SSID` and `WIFI_PASSWORD` in `secrets.h`.
+   - Recommended for this project: use Raspberry AP credentials (`AgriApp-Rescue`).
+   - Optional: set `WIFI_STATIC_IP`, `WIFI_STATIC_GW`, `WIFI_STATIC_MASK` (default subnet `192.168.4.0/24`).
 
 `secrets.h` is git-ignored and must not be committed.
 

@@ -1,17 +1,10 @@
 \section{API Specification}
 
 \subsection{Versioning Policy}
-The project adopts \texttt{/api/v1} as the primary and stable API namespace. All current and future client-side integrations should target this namespace first. Legacy routes are still exposed for backward compatibility with existing scripts and historical UI code paths, but they are considered transitional interfaces.
-
-The practical policy is therefore:
-\begin{itemize}
-  \item \textbf{preferred}: implement and consume \texttt{/api/v1} endpoints;
-  \item \textbf{temporary}: keep legacy aliases active until all clients are migrated;
-  \item \textbf{future}: remove deprecated aliases once migration is complete and validated.
-\end{itemize}
+The project adopts \texttt{/api/v1} as the primary and stable API namespace. All current and future client-side integrations should target this namespace first.
 
 \subsection{Complete Active Endpoint Inventory}
-This subsection reports all currently active HTTP routes at implementation time, including API v1 endpoints, legacy aliases, and UI routes.
+This subsection reports all currently active HTTP routes at implementation time, including API v1 endpoints and UI routes.
 
 \subsubsection{API v1 Endpoints}
 \begin{longtable}{p{0.33\linewidth} p{0.15\linewidth} p{0.47\linewidth}}
@@ -36,24 +29,6 @@ Path & Method & Description \\
 \texttt{/api/v1/download/dataset} & GET & Download full dataset ZIP \\
 \texttt{/api/v1/download/dataset-selected} & POST & Download selected subset ZIP \\
 \texttt{/api/v1/images/download-with-labels} & GET & Download rendered image with labels \\
-\bottomrule
-\end{longtable}
-
-\subsubsection{Legacy Compatibility Endpoints (Deprecated in Roadmap)}
-\begin{longtable}{p{0.33\linewidth} p{0.15\linewidth} p{0.47\linewidth}}
-\toprule
-Path & Method & Description \\
-\midrule
-\texttt{/get\_labels} & GET & Legacy alias of labels read \\
-\texttt{/save\_labels} & POST & Legacy alias of labels save \\
-\texttt{/receive} & POST & Legacy alias of image upload \\
-\texttt{/uploaded\_images} & GET & Historical image listing endpoint \\
-\texttt{/get-images} & GET & Legacy gallery paginated listing \\
-\texttt{/image-status} & GET & Legacy single-image status endpoint \\
-\texttt{/delete-image} & POST & Legacy single-image delete endpoint \\
-\texttt{/download-dataset} & GET & Legacy dataset ZIP download \\
-\texttt{/download-dataset-selected} & POST & Legacy selected ZIP download \\
-\texttt{/download-image-with-labels} & GET & Legacy rendered image download \\
 \bottomrule
 \end{longtable}
 
@@ -138,13 +113,5 @@ Most API endpoints exchange JSON payloads and return explicit status fields suit
 
 Annotation endpoints operate on image-scoped state and are responsible for maintaining consistency between JSON annotation files and YOLO TXT exports. Deletion endpoints enforce artifact cleanup behavior (image, label, JSON) to reduce orphaned files.
 
-\subsection{Deprecation and Migration Plan}
-Legacy compatibility routes are intentionally still active, but they should be phased out in a controlled sequence:
-\begin{enumerate}
-  \item ensure all clients (web, tablet, scripts) consume only \texttt{/api/v1};
-  \item remove references to legacy routes from code and documentation;
-  \item run regression checks on capture, gallery, labeler, and download workflows;
-  \item remove deprecated backend aliases in one coordinated release.
-\end{enumerate}
-
-This plan keeps the migration safe while converging the system toward a single contractual API surface.
+\subsection{Deprecation and Migration Note}
+The project has completed a major cleanup step by removing key legacy aliases previously used for labels and single-image deletion. Ongoing maintenance should continue converging remaining historical routes toward the \texttt{/api/v1} namespace.

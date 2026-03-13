@@ -8,7 +8,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-
 JPEG_SOI = b"\xff\xd8"
 JPEG_EOI = b"\xff\xd9"
 

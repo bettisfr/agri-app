@@ -1,11 +1,11 @@
 "use strict";
 
 const ROUTES = {
-    getImages: "/get-images",
-    imageStatus: "/image-status",
-    deleteImage: "/delete-image",
-    downloadAll: "/download-dataset",
-    downloadVisible: "/download-dataset-selected",
+    getImages: "/api/v1/images",
+    imageStatus: "/api/v1/images",
+    deleteImage: "/api/v1/images/delete",
+    downloadAll: "/api/v1/download/dataset",
+    downloadVisible: "/api/v1/download/dataset-selected",
     labelPage: "/label",
 };
 
@@ -76,14 +76,27 @@ function buildGetImagesUrl() {
 function buildMetadataHTML(imageData) {
     const labeledText = imageData.is_labeled ? "Labeled" : "To label";
     const labeledClass = imageData.is_labeled ? "ok" : "todo";
+    const sizeText = formatBytes(imageData.file_size_bytes ?? 0);
 
     return `
         <div class="gallery-meta-name">${imageData.filename}</div>
         <div class="gallery-meta-row">
             <span><strong>${imageData.labels_count ?? 0}</strong> labels</span>
+            <span>${sizeText}</span>
             <span class="gallery-meta-pill ${labeledClass}">${labeledText}</span>
         </div>
     `;
+}
+
+function formatBytes(bytes) {
+    const value = Number(bytes) || 0;
+    if (value >= 1024 * 1024) {
+        return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+    }
+    if (value >= 1024) {
+        return `${(value / 1024).toFixed(1)} kB`;
+    }
+    return `${value} B`;
 }
 
 function findCardByFilename(filename) {
@@ -209,7 +222,7 @@ async function refreshSingleImageCard(filename) {
         }
 
         try {
-            const response = await fetch(`${ROUTES.imageStatus}?filename=${encodeURIComponent(filename)}`);
+            const response = await fetch(`${ROUTES.imageStatus}/${encodeURIComponent(filename)}/status`);
             if (!response.ok) continue;
 
             const data = await response.json();
@@ -225,11 +238,13 @@ async function refreshSingleImageCard(filename) {
                 filename: data.filename,
                 labels_count: data.labels_count,
                 is_labeled: data.is_labeled,
+                file_size_bytes: data.file_size_bytes,
             });
             const stateItem = galleryState.pageImages.find((img) => img.filename === data.filename);
             if (stateItem) {
                 stateItem.labels_count = data.labels_count;
                 stateItem.is_labeled = data.is_labeled;
+                stateItem.file_size_bytes = data.file_size_bytes ?? stateItem.file_size_bytes;
             }
             updateModalStatusTag();
             return;

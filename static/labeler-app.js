@@ -777,7 +777,7 @@ const api = {
                 })),
             };
 
-            const res = await fetch("/save_labels", {
+            const res = await fetch("/api/v1/labels", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
@@ -840,7 +840,7 @@ const api = {
         selectedId = null;
 
         try {
-            const res = await fetch(`/get_labels?image=${encodeURIComponent(filename)}`);
+            const res = await fetch(`/api/v1/labels?image=${encodeURIComponent(filename)}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.status === "success" && Array.isArray(data.labels)) {
@@ -895,7 +895,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 uiList.setStatus("No image loaded, cannot download.", "error");
                 return;
             }
-            const url = `/download-image-with-labels?image=${encodeURIComponent(currentImage.name)}`;
+            const url = `/api/v1/images/download-with-labels?image=${encodeURIComponent(currentImage.name)}`;
             window.location.href = url;
         });
     }

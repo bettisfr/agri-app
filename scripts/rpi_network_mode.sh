@@ -67,6 +67,7 @@ ensure_ap_profile() {
   nmcli connection modify "$AP_CONN" \
     802-11-wireless.mode ap \
     802-11-wireless.band bg \
+    802-11-wireless.ap-isolation 0 \
     wifi-sec.key-mgmt wpa-psk \
     wifi-sec.psk "$AP_PSK" \
     ipv4.method shared \

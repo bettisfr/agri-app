@@ -26,4 +26,19 @@ interface AgriApi {
 
     @POST("/api/v1/network/mode")
     suspend fun setNetworkMode(@Body req: NetworkModeRequest): NetworkModeResponse
+
+    @POST("/api/v1/system/reboot")
+    suspend fun rebootSystem(): ActionResponse
+
+    @POST("/api/v1/system/poweroff")
+    suspend fun poweroffSystem(): ActionResponse
+
+    @POST("/api/v1/system/server/restart")
+    suspend fun restartServer(): ActionResponse
+
+    @POST("/api/v1/images/delete")
+    suspend fun deleteImage(@Body req: DeleteImageRequest): DeleteImageResponse
+
+    @POST("/api/v1/images/delete-all")
+    suspend fun deleteAllImages(): ActionResponse
 }

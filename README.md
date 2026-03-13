@@ -141,3 +141,21 @@ journalctl --user -u agriapp-capture.service -f
   - `static/uploads/images`
   - labels in `static/uploads/labels`
   - JSON annotations in `static/uploads/jsons`
+
+## Deploy Helper (Local)
+
+`deploy_rpi.sh` now also supports Android app lifecycle commands:
+
+```bash
+# Compile only
+./deploy_rpi.sh --android-build
+
+# Install current debug APK on connected tablet
+./deploy_rpi.sh --android-install
+
+# Launch app on tablet
+./deploy_rpi.sh --android-run
+
+# Compile + Install + Run
+./deploy_rpi.sh --android-cir
+```

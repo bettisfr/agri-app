@@ -2,7 +2,9 @@
 #include <WiFi.h>
 
 #include "board_config.h"
-#include "secrets.h"
+
+const char *ssid = "AgriApp-Rescue";
+const char *password = "AgriAppRescue123";
 
 void startCameraServer();
 void setupLedFlash();
@@ -76,7 +78,7 @@ void setup() {
     setupLedFlash();
 #endif
 
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(ssid, password);
     WiFi.setSleep(false);
 
     Serial.print("WiFi connecting");

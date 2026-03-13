@@ -9,6 +9,10 @@ import json
 import datetime  # needed for timestamp parsing
 import socket
 import subprocess
+import urllib.parse
+import urllib.request
+import ipaddress
+import struct
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
@@ -124,6 +128,71 @@ def labels_count_for_image(filename: str) -> int:
     return count
 
 
+def file_size_bytes_for_image(filename: str) -> int:
+    path = os.path.join(IMAGES_DIR, filename)
+    try:
+        return int(os.path.getsize(path))
+    except Exception:
+        return 0
+
+
+def image_dimensions_for_image(filename: str) -> tuple[int, int]:
+    """
+    Best-effort image dimension detection (JPEG/PNG).
+    Returns (width, height) or (0, 0) on failure.
+    """
+    path = os.path.join(IMAGES_DIR, filename)
+    try:
+        with open(path, "rb") as f:
+            header = f.read(32)
+            if len(header) >= 24 and header.startswith(b"\x89PNG\r\n\x1a\n"):
+                width, height = struct.unpack(">II", header[16:24])
+                return int(width), int(height)
+
+            if len(header) >= 2 and header[0:2] == b"\xff\xd8":
+                f.seek(2)
+                while True:
+                    byte = f.read(1)
+                    if not byte:
+                        break
+                    if byte != b"\xff":
+                        continue
+                    marker = f.read(1)
+                    if not marker:
+                        break
+                    while marker == b"\xff":
+                        marker = f.read(1)
+                        if not marker:
+                            break
+                    if not marker:
+                        break
+
+                    marker_code = marker[0]
+                    if marker_code in (0xD8, 0xD9):
+                        continue
+
+                    seg_len_bytes = f.read(2)
+                    if len(seg_len_bytes) != 2:
+                        break
+                    seg_len = int.from_bytes(seg_len_bytes, "big")
+                    if seg_len < 2:
+                        break
+
+                    if marker_code in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                        sof = f.read(5)
+                        if len(sof) == 5:
+                            height = int.from_bytes(sof[1:3], "big")
+                            width = int.from_bytes(sof[3:5], "big")
+                            return width, height
+                        break
+
+                    f.seek(seg_len - 2, os.SEEK_CUR)
+    except Exception:
+        pass
+
+    return 0, 0
+
+
 def run_network_mode_script(args_list):
     """
     Run network mode helper script and parse JSON output.
@@ -169,7 +238,7 @@ def run_network_mode_script(args_list):
 
 def list_images_paginated(filter_str: str, only_labeled: bool, labeled_only: bool, page: int, page_size: int):
     """
-    Build paginated gallery payload. Reused by legacy and /api/v1 routes.
+    Build paginated gallery payload.
     """
     images = get_sorted_images(IMAGES_DIR)
 
@@ -212,6 +281,9 @@ def list_images_paginated(filter_str: str, only_labeled: bool, labeled_only: boo
                     if line.strip():
                         labels_count += 1
         img["labels_count"] = labels_count
+        width, height = image_dimensions_for_image(img["filename"])
+        img["image_width"] = width
+        img["image_height"] = height
 
     return {
         "items": page_items,
@@ -307,6 +379,7 @@ def get_sorted_images(image_folder):
             {
                 "filename": image,
                 "upload_ts": sort_ts,   # numeric timestamp used for sorting
+                "file_size_bytes": os.path.getsize(file_path),
                 "metadata": metadata,
             }
         )
@@ -347,7 +420,7 @@ def label_page():
     return render_template("labeler.html", image_name=image_name)
 
 
-@app.route("/get_labels")
+@app.route("/api/v1/labels", methods=["GET"])
 def get_labels():
     """
     Return all boxes for an image.
@@ -417,7 +490,7 @@ def get_labels():
     return jsonify({"status": "success", "image": image_name, "labels": labels_out})
 
 
-@app.route("/save_labels", methods=["POST"])
+@app.route("/api/v1/labels", methods=["POST"])
 def save_labels():
     """
     Save labels for one image.
@@ -494,6 +567,7 @@ def save_labels():
 
 
 @app.route("/receive", methods=["POST"])
+@app.route("/api/v1/images/upload", methods=["POST"])
 def receive_image():
     """
     Handles image upload and metadata extraction.
@@ -529,53 +603,8 @@ def receive_image():
 
 @app.route("/uploaded_images")
 def uploaded_images():
-    # kept for backward compatibility (same as /get-images)
+    # Legacy endpoint kept for backward compatibility.
     return jsonify(get_sorted_images(IMAGES_DIR))
-
-
-@app.route("/get-images")
-def get_images():
-    """
-    Return the list of images with optional filtering.
-
-    Query parameters:
-      - filter: substring (case-insensitive) to match in filename
-      - only_labeled: if true/1/yes/on -> keep only NON-labeled images
-                      (as per your latest semantics)
-      - labeled_only: if true/1/yes/on -> keep only labeled images
-      - page: 1-based page number (default 1)
-      - page_size: page size (default 24, max 200)
-    """
-    filter_str = request.args.get("filter", "").strip().lower()
-    only_labeled_raw = request.args.get("only_labeled", "false").strip().lower()
-    only_labeled = only_labeled_raw in ("1", "true", "yes", "on")
-    labeled_only_raw = request.args.get("labeled_only", "false").strip().lower()
-    labeled_only = labeled_only_raw in ("1", "true", "yes", "on")
-    page_raw = request.args.get("page", "1").strip()
-    page_size_raw = request.args.get("page_size", "24").strip()
-
-    try:
-        page = int(page_raw)
-    except ValueError:
-        page = 1
-
-    try:
-        page_size = int(page_size_raw)
-    except ValueError:
-        page_size = 24
-
-    page = max(page, 1)
-    page_size = max(1, min(page_size, 200))
-
-    return jsonify(
-        list_images_paginated(
-            filter_str=filter_str,
-            only_labeled=only_labeled,
-            labeled_only=labeled_only,
-            page=page,
-            page_size=page_size,
-        )
-    )
 
 
 @app.route("/api/v1/health")
@@ -606,6 +635,151 @@ def api_system_status():
     )
 
 
+@app.route("/api/v1/system/reboot", methods=["POST"])
+def api_system_reboot():
+    """
+    Request a Raspberry Pi reboot.
+    Requires passwordless sudo for user running the server.
+    """
+    try:
+        precheck = subprocess.run(
+            ["sudo", "-n", "true"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"sudo precheck failed: {e}"}), 500
+
+    if precheck.returncode != 0:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "sudo not configured for reboot (passwordless required)",
+                "stderr": (precheck.stderr or "").strip()[-300:],
+            }
+        ), 403
+
+    # Run reboot with a short delay so this request can return a response first.
+    reboot_cmd = (
+        "nohup sh -c 'sleep 1; "
+        "sudo -n systemctl reboot || sudo -n shutdown -r now || sudo -n reboot' "
+        "> /tmp/agriapp_reboot.log 2>&1 &"
+    )
+    try:
+        subprocess.Popen(
+            ["bash", "-lc", reboot_cmd],
+            cwd=os.path.dirname(__file__),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"failed to schedule reboot: {e}"}), 500
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": "reboot scheduled",
+            "timestamp": int(time.time()),
+        }
+    )
+
+
+@app.route("/api/v1/system/poweroff", methods=["POST"])
+def api_system_poweroff():
+    """
+    Request a Raspberry Pi poweroff.
+    Requires passwordless sudo for user running the server.
+    """
+    try:
+        precheck = subprocess.run(
+            ["sudo", "-n", "true"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"sudo precheck failed: {e}"}), 500
+
+    if precheck.returncode != 0:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "sudo not configured for poweroff (passwordless required)",
+                "stderr": (precheck.stderr or "").strip()[-300:],
+            }
+        ), 403
+
+    poweroff_cmd = (
+        "nohup sh -c 'sleep 1; "
+        "sudo -n systemctl poweroff || sudo -n shutdown -h now || sudo -n poweroff' "
+        "> /tmp/agriapp_poweroff.log 2>&1 &"
+    )
+    try:
+        subprocess.Popen(
+            ["bash", "-lc", poweroff_cmd],
+            cwd=os.path.dirname(__file__),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"failed to schedule poweroff: {e}"}), 500
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": "poweroff scheduled",
+            "timestamp": int(time.time()),
+        }
+    )
+
+
+@app.route("/api/v1/system/server/restart", methods=["POST"])
+def api_system_server_restart():
+    """
+    Restart the agriapp server user service.
+    """
+    check = subprocess.run(
+        ["systemctl", "--user", "is-enabled", "agriapp-server.service"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    if check.returncode != 0:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "agriapp-server.service is not enabled for user",
+                "stderr": (check.stderr or "").strip()[-300:],
+            }
+        ), 404
+
+    restart_cmd = (
+        "nohup sh -c 'sleep 1; systemctl --user restart agriapp-server.service' "
+        "> /tmp/agriapp_server_restart.log 2>&1 &"
+    )
+    try:
+        subprocess.Popen(
+            ["bash", "-lc", restart_cmd],
+            cwd=os.path.dirname(__file__),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"failed to schedule restart: {e}"}), 500
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": "server restart scheduled",
+            "timestamp": int(time.time()),
+        }
+    )
+
+
 @app.route("/api/v1/network/mode", methods=["GET", "POST"])
 def api_network_mode():
     """
@@ -631,7 +805,6 @@ def api_network_mode():
 def api_images():
     """
     Paginated images API for tablet/remote clients.
-    Query parameters are aligned with /get-images.
     """
     filter_str = request.args.get("filter", "").strip().lower()
     only_labeled_raw = request.args.get("only_labeled", "false").strip().lower()
@@ -684,6 +857,7 @@ def api_image_status(filename):
             "filename": clean_name,
             "is_labeled": is_image_labeled(clean_name),
             "labels_count": labels_count_for_image(clean_name),
+            "file_size_bytes": file_size_bytes_for_image(clean_name),
         }
     )
 
@@ -737,6 +911,110 @@ def api_capture_oneshot():
     )
 
 
+@app.route("/api/v1/esp/capture", methods=["GET"])
+def api_esp_capture_proxy():
+    """
+    Proxy one JPEG capture from ESP-CAM through Raspberry Pi.
+    Useful when tablet cannot reliably reach ESP directly.
+    """
+    esp_base = (request.args.get("esp_base") or "").strip()
+    if not esp_base:
+        return jsonify({"status": "error", "message": "missing esp_base"}), 400
+
+    try:
+        parsed = urllib.parse.urlsplit(esp_base)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return jsonify({"status": "error", "message": "invalid esp_base"}), 400
+
+        host = parsed.hostname or ""
+        ip_obj = ipaddress.ip_address(host)
+        if not ip_obj.is_private:
+            return jsonify({"status": "error", "message": "esp_base must be private IP"}), 400
+    except Exception:
+        return jsonify({"status": "error", "message": "invalid esp_base"}), 400
+
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    esp_capture_url = f"{base}/capture"
+    helper = os.path.join(os.path.dirname(__file__), "firmware", "esp32-cam", "save_photo.py")
+    if not os.path.exists(helper):
+        return jsonify({"status": "error", "message": "save_photo.py helper not found"}), 500
+
+    tmp_name = os.path.join("/tmp", f"esp_api_{int(time.time() * 1000)}.jpg")
+    cmd = [
+        "python3",
+        helper,
+        "--url",
+        esp_capture_url,
+        "--framesize",
+        "qxga",
+        "--timeout",
+        "20",
+        "--out",
+        tmp_name,
+    ]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"status": "error", "message": "esp capture timeout"}), 504
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"esp capture failed: {e}"}), 500
+
+    if proc.returncode != 0:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "esp capture command failed",
+                "returncode": proc.returncode,
+                "stdout": (proc.stdout or "")[-500:],
+                "stderr": (proc.stderr or "")[-500:],
+            }
+        ), 502
+
+    if not os.path.exists(tmp_name) or os.path.getsize(tmp_name) < 1024:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "esp capture produced invalid output",
+                "stdout": (proc.stdout or "")[-500:],
+                "stderr": (proc.stderr or "")[-500:],
+            }
+        ), 502
+
+    with open(tmp_name, "rb") as f:
+        data = f.read()
+    try:
+        os.remove(tmp_name)
+    except Exception:
+        pass
+
+    saved_name = f"esp_{time.strftime('%Y%m%d-%H%M%S')}.jpg"
+    saved_path = os.path.join(IMAGES_DIR, saved_name)
+    try:
+        with open(saved_path, "wb") as out:
+            out.write(data)
+    except Exception:
+        # Keep response usable even if local save fails.
+        saved_name = ""
+
+    resp = send_file(
+        io.BytesIO(data),
+        mimetype="image/jpeg",
+        as_attachment=False,
+        download_name="esp_capture.jpg",
+    )
+    if saved_name:
+        resp.headers["X-AgriApp-Filename"] = saved_name
+    return resp
+
+
 @app.route("/image-status")
 def image_status():
     """
@@ -760,11 +1038,12 @@ def image_status():
             "filename": filename,
             "is_labeled": is_image_labeled(filename),
             "labels_count": labels_count_for_image(filename),
+            "file_size_bytes": file_size_bytes_for_image(filename),
         }
     )
 
 
-@app.route("/delete-image", methods=["POST"])
+@app.route("/api/v1/images/delete", methods=["POST"])
 def delete_image():
     """
     Delete an image, its corresponding .txt labels, and its .json (if present).
@@ -806,7 +1085,64 @@ def delete_image():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/v1/images/delete-all", methods=["POST"])
+def api_delete_all_images():
+    """
+    Delete all images and their related labels/json files.
+    """
+    removed_images = 0
+    removed_labels = 0
+    removed_jsons = 0
+    errors = []
+
+    for name in os.listdir(IMAGES_DIR):
+        if not name.lower().endswith((".jpg", ".jpeg", ".png")):
+            continue
+
+        filename = normalize_image_filename(name)
+        if not filename:
+            continue
+
+        img_path = os.path.join(IMAGES_DIR, filename)
+        base, _ = os.path.splitext(filename)
+        label_path = os.path.join(LABELS_DIR, base + ".txt")
+        json_path = json_path_for_image(filename)
+
+        try:
+            if os.path.exists(img_path):
+                os.remove(img_path)
+                removed_images += 1
+        except Exception as e:
+            errors.append(f"image:{filename}:{e}")
+
+        try:
+            if os.path.exists(label_path):
+                os.remove(label_path)
+                removed_labels += 1
+        except Exception as e:
+            errors.append(f"label:{filename}:{e}")
+
+        try:
+            if os.path.exists(json_path):
+                os.remove(json_path)
+                removed_jsons += 1
+        except Exception as e:
+            errors.append(f"json:{filename}:{e}")
+
+    status = "success" if not errors else "partial"
+    return jsonify(
+        {
+            "status": status,
+            "removed_images": removed_images,
+            "removed_labels": removed_labels,
+            "removed_jsons": removed_jsons,
+            "errors_count": len(errors),
+        }
+    )
+
+
 @app.route("/download-dataset")
+@app.route("/api/v1/download/dataset")
 def download_dataset():
     """
     Create a zip on the fly containing:
@@ -863,12 +1199,13 @@ def download_dataset():
 
 
 @app.route("/download-dataset-selected", methods=["POST"])
+@app.route("/api/v1/download/dataset-selected", methods=["POST"])
 def download_dataset_selected():
     """
     Create a zip on the fly containing only selected images and their related
     labels/json files.
     Expects JSON body:
-      { "filenames": ["img_001.jpg", ...] }
+      { "filenames": ["rpi_20260313-101500.jpg", "esp_20260313-101530.jpg", ...] }
     """
     data = request.get_json(silent=True) or {}
     filenames = data.get("filenames", [])
@@ -928,6 +1265,7 @@ def download_dataset_selected():
 
 
 @app.route("/download-image-with-labels")
+@app.route("/api/v1/images/download-with-labels")
 def download_image_with_labels():
     """
     Download a zip containing one image and its related label/json files.
