@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Deploy project to Raspberry Pi via rsync over SSH.
-# Modes: --mount, --umount, --sync, --sync-dry, --ssh, --remote-cmd, --git-pull, --git-push, --git-commit.
+# Modes: --mount, --umount, --sync, --sync-dry, --ssh, --remote-cmd,
+#        --git-pull, --git-push, --git-commit, --esp-build, --esp-flash.
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
 MODE=""
@@ -16,9 +17,12 @@ REMOTE_PATH="~/agri-app"
 REMOTE_MOUNT_PATH="/home/fra"
 MOUNT_DIR="${HOME}/mnt/rpi5"
 RSYNC_SSH_PORT="22"
+ESP_FQBN="esp32:esp32:esp32s3"
+ESP_PORT="/dev/ttyUSB0"
+ESP_SKETCH_DIR="firmware/esp32-cam"
 
 usage() {
-  echo "Usage: $0 [--mount|--umount|--sync|--sync-dry|--ssh|--remote-cmd|--git-pull|--git-push|--git-commit] [--msg <message>] [--cmd <command>] [--host <ip_or_host>] [--user <user>] [--path <remote_path>] [--mount-path <remote_mount_path>] [--mount-dir <local_mount_dir>] [--port <ssh_port>]"
+  echo "Usage: $0 [--mount|--umount|--sync|--sync-dry|--ssh|--remote-cmd|--git-pull|--git-push|--git-commit|--esp-build|--esp-flash] [--msg <message>] [--cmd <command>] [--host <ip_or_host>] [--user <user>] [--path <remote_path>] [--mount-path <remote_mount_path>] [--mount-dir <local_mount_dir>] [--port <ssh_port>] [--esp-port <tty>] [--esp-fqbn <fqbn>] [--esp-sketch-dir <dir>]"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -49,6 +53,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --git-commit|--commit)
       MODE="git-commit"
+      ;;
+    --esp-build)
+      MODE="esp-build"
+      ;;
+    --esp-flash)
+      MODE="esp-flash"
       ;;
     --msg|-m)
       if [[ -z "${2:-}" ]]; then
@@ -114,6 +124,30 @@ while [[ $# -gt 0 ]]; do
       RSYNC_SSH_PORT="$2"
       shift
       ;;
+    --esp-port)
+      if [[ -z "${2:-}" ]]; then
+        usage
+        exit 1
+      fi
+      ESP_PORT="$2"
+      shift
+      ;;
+    --esp-fqbn)
+      if [[ -z "${2:-}" ]]; then
+        usage
+        exit 1
+      fi
+      ESP_FQBN="$2"
+      shift
+      ;;
+    --esp-sketch-dir)
+      if [[ -z "${2:-}" ]]; then
+        usage
+        exit 1
+      fi
+      ESP_SKETCH_DIR="$2"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -130,6 +164,13 @@ if [[ -z "${MODE}" ]]; then
   usage
   exit 1
 fi
+
+require_arduino_cli() {
+  if ! command -v arduino-cli >/dev/null 2>&1; then
+    echo "arduino-cli not found in PATH." >&2
+    exit 1
+  fi
+}
 
 if [[ "${MODE}" == "git-pull" ]]; then
   echo "[GIT-PULL] Running git pull in ${SRC_DIR}"
@@ -153,6 +194,23 @@ if [[ "${MODE}" == "git-commit" ]]; then
   echo "[GIT-COMMIT] Running git commit in ${SRC_DIR}"
   cd "${SRC_DIR}"
   git commit -m "${COMMIT_MSG}"
+  exit 0
+fi
+
+if [[ "${MODE}" == "esp-build" ]]; then
+  require_arduino_cli
+  echo "[ESP-BUILD] fqbn=${ESP_FQBN} sketch=${ESP_SKETCH_DIR}"
+  cd "${SRC_DIR}"
+  arduino-cli compile --fqbn "${ESP_FQBN}" "${ESP_SKETCH_DIR}"
+  exit 0
+fi
+
+if [[ "${MODE}" == "esp-flash" ]]; then
+  require_arduino_cli
+  echo "[ESP-FLASH] fqbn=${ESP_FQBN} port=${ESP_PORT} sketch=${ESP_SKETCH_DIR}"
+  cd "${SRC_DIR}"
+  arduino-cli compile --fqbn "${ESP_FQBN}" "${ESP_SKETCH_DIR}"
+  arduino-cli upload -p "${ESP_PORT}" --fqbn "${ESP_FQBN}" "${ESP_SKETCH_DIR}"
   exit 0
 fi
 
@@ -211,6 +269,12 @@ COMMON_ARGS=(
   --exclude='.venv/'
   --exclude='venv/'
   --exclude='*.pyc'
+  --exclude='mobile/android/.gradle/'
+  --exclude='mobile/android/.kotlin/'
+  --exclude='mobile/android/build/'
+  --exclude='mobile/android/app/build/'
+  --exclude='mobile/android/local.properties'
+  --exclude='firmware/esp32-cam/secrets.h'
   --exclude='static/uploads/images/'
   --exclude='static/uploads/labels/'
   --exclude='static/uploads/jsons/'

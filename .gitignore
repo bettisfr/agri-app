@@ -6,3 +6,8 @@ static/uploads/jsons
 **/__pycache__/
 .codex*
 .env.systemd
+firmware/esp32-cam/secrets.h
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties

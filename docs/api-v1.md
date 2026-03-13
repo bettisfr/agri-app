@@ -106,6 +106,39 @@ Success response:
 }
 ```
 
+## 6) Network mode (RPi)
+- Method: `GET`
+- Path: `/api/v1/network/mode`
+- Purpose: read current RPi networking mode.
+
+Example:
+```bash
+curl http://<rpi-ip>:5000/api/v1/network/mode
+```
+
+Response (example):
+```json
+{
+  "status": "success",
+  "mode": "hybrid_debug",
+  "ap_active": true,
+  "client_active": true,
+  "active_wifi_connections": ["agriapp-rescue", "HomeWiFi"]
+}
+```
+
+Set mode:
+- Method: `POST`
+- Path: `/api/v1/network/mode`
+- Body: `{ "mode": "wifi_only|ap_only|hybrid_debug" }`
+
+Example:
+```bash
+curl -X POST http://<rpi-ip>:5000/api/v1/network/mode \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"ap_only"}'
+```
+
 Error response (example):
 ```json
 {

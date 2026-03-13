@@ -22,6 +22,7 @@ UPLOAD_ROOT = os.path.join(STATIC_DIR, "uploads")
 IMAGES_DIR = os.path.join(UPLOAD_ROOT, "images")   # image files
 LABELS_DIR = os.path.join(UPLOAD_ROOT, "labels")   # YOLO txt files
 JSONS_DIR = os.path.join(UPLOAD_ROOT, "jsons")     # per-image json files
+NETWORK_MODE_SCRIPT = os.path.join(os.path.dirname(__file__), "scripts", "rpi_network_mode.sh")
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
 os.makedirs(LABELS_DIR, exist_ok=True)
@@ -121,6 +122,49 @@ def labels_count_for_image(filename: str) -> int:
             if line.strip():
                 count += 1
     return count
+
+
+def run_network_mode_script(args_list):
+    """
+    Run network mode helper script and parse JSON output.
+    """
+    if not os.path.exists(NETWORK_MODE_SCRIPT):
+        return {"status": "error", "message": "network mode script not found"}, 500
+
+    cmd = ["bash", NETWORK_MODE_SCRIPT] + args_list
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            timeout=40,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "message": "network mode command timeout"}, 504
+    except Exception as e:
+        return {"status": "error", "message": f"network mode command failed: {e}"}, 500
+
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+
+    if proc.returncode != 0:
+        return {
+            "status": "error",
+            "message": "network mode command failed",
+            "returncode": proc.returncode,
+            "stderr": stderr[-500:],
+            "stdout": stdout[-500:],
+        }, 500
+
+    if not stdout:
+        return {"status": "error", "message": "network mode command returned empty output"}, 500
+
+    try:
+        return json.loads(stdout), 200
+    except json.JSONDecodeError:
+        return {"status": "success", "raw": stdout}, 200
 
 
 def list_images_paginated(filter_str: str, only_labeled: bool, labeled_only: bool, page: int, page_size: int):
@@ -560,6 +604,27 @@ def api_system_status():
             "timestamp": int(time.time()),
         }
     )
+
+
+@app.route("/api/v1/network/mode", methods=["GET", "POST"])
+def api_network_mode():
+    """
+    GET  -> current network mode/status.
+    POST -> set network mode. JSON body: { "mode": "wifi_only|ap_only|hybrid_debug" }.
+    """
+    if request.method == "GET":
+        payload, status_code = run_network_mode_script(["--status"])
+        return jsonify(payload), status_code
+
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get("mode", "")).strip().lower()
+    if mode not in ("wifi_only", "ap_only", "hybrid_debug"):
+        return jsonify({"status": "error", "message": "invalid mode"}), 400
+
+    payload, status_code = run_network_mode_script(["--set", mode])
+    if status_code == 200 and isinstance(payload, dict):
+        payload["applied_mode"] = mode
+    return jsonify(payload), status_code
 
 
 @app.route("/api/v1/images")
