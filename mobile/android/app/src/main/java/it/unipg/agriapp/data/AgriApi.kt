@@ -21,6 +21,15 @@ interface AgriApi {
     @POST("/api/v1/capture/oneshot")
     suspend fun oneShot(): CaptureResponse
 
+    @GET("/api/v1/capture/loop/status")
+    suspend fun captureLoopStatus(): CaptureLoopStatusResponse
+
+    @POST("/api/v1/capture/loop/start")
+    suspend fun startCaptureLoop(@Body req: CaptureLoopStartRequest): CaptureLoopStatusResponse
+
+    @POST("/api/v1/capture/loop/stop")
+    suspend fun stopCaptureLoop(): CaptureLoopStatusResponse
+
     @GET("/api/v1/network/mode")
     suspend fun networkMode(): NetworkModeResponse
 

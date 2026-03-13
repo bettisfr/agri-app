@@ -19,6 +19,7 @@ Path & Method & Description \\
 \texttt{/api/v1/network/mode} & GET/POST & Read/set network mode \\
 \texttt{/api/v1/images} & GET & Paginated image list \\
 \texttt{/api/v1/images/\{filename\}/status} & GET & Single-image label/status summary \\
+\texttt{/api/v1/images/\{filename\}/thumbnail} & GET & Lightweight cached thumbnail (e.g. 320px) \\
 \texttt{/api/v1/images/delete} & POST & Delete one image and related artifacts \\
 \texttt{/api/v1/images/delete-all} & POST & Delete all images and related artifacts \\
 \texttt{/api/v1/images/upload} & POST & Upload image from external producer \\
@@ -70,6 +71,7 @@ Path & Method & Main browser usage \\
 \texttt{/label} & GET & Labeler page rendering \\
 \texttt{/api/v1/images} & GET & Paginated gallery data \\
 \texttt{/api/v1/images/\{filename\}/status} & GET & Per-image status refresh \\
+\texttt{/api/v1/images/\{filename\}/thumbnail} & GET & Thumbnail rendering in grid/list views \\
 \texttt{/api/v1/labels} & GET/POST & Label read/write workflow \\
 \texttt{/api/v1/images/delete} & POST & Single image delete \\
 \texttt{/api/v1/images/delete-all} & POST & Bulk delete \\
@@ -109,9 +111,9 @@ Path & Method & Integration role \\
 \end{longtable}
 
 \subsection{Request/Response Semantics}
-Most API endpoints exchange JSON payloads and return explicit status fields suitable for UI rendering and operational diagnostics. Download endpoints return binary streams (JPEG/ZIP). Pagination contracts are server-side and include canonical metadata (\texttt{page}, \texttt{page\_size}, \texttt{total\_items}, \texttt{total\_pages}) so that web and tablet clients can share a consistent navigation model.
+Most API endpoints exchange JSON payloads and return explicit status fields suitable for UI rendering and operational diagnostics. Download endpoints return binary streams (JPEG/ZIP). Pagination contracts are server-side and include canonical metadata (\texttt{page}, \texttt{page\_size}, \texttt{total\_items}, \texttt{total\_pages}) so that web and tablet clients can share a consistent navigation model. Thumbnail endpoints return lightweight JPEG streams backed by server-side cache to reduce list/grid payload cost.
 
-Each image item exposed by \texttt{/api/v1/images} includes a \texttt{metadata} object with environmental and geospatial fields (\texttt{temperature}, \texttt{pressure}, \texttt{humidity}, \texttt{latitude}, \texttt{longitude}, \texttt{user\_comment}). During one-shot acquisition flows (\texttt{/api/v1/capture/oneshot} and \texttt{/api/v1/esp/capture}), the backend performs best-effort GPS sampling on the Raspberry Pi and persists latitude/longitude in a dedicated sidecar file under \texttt{static/uploads/metadata}. This design avoids image recompression and keeps geotag information queryable in both browser and tablet galleries.
+Each image item exposed by \texttt{/api/v1/images} includes a \texttt{metadata} object with environmental and geospatial fields (\texttt{temperature}, \texttt{pressure}, \texttt{humidity}, \texttt{latitude}, \texttt{longitude}, \texttt{user\_comment}). During one-shot acquisition flows (\texttt{/api/v1/capture/oneshot} and \texttt{/api/v1/esp/capture}), the backend performs best-effort sampling of GPS and BME280 on Raspberry Pi and persists available values in dedicated sidecar files under \texttt{static/uploads/metadata}. This design avoids image recompression and keeps contextual information queryable in both browser and tablet galleries.
 
 Annotation endpoints operate on image-scoped state and are responsible for maintaining consistency between JSON annotation files and YOLO TXT exports. Deletion endpoints enforce artifact cleanup behavior (image, label, JSON, metadata sidecar) to reduce orphaned files.
 

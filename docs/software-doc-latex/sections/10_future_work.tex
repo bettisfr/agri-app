@@ -6,7 +6,7 @@ Future work in AgriApp Control should preserve the current design philosophy: pr
 In this context, roadmap planning benefits from a layered approach: first consolidate contracts and usability, then extend automation and analytics, and finally evaluate broader ecosystem integrations.
 
 \subsection{API and Contract Consolidation}
-The first evolution line is full convergence on \texttt{/api/v1}. Although legacy aliases are still active for compatibility, the long-term direction is a single authoritative API surface. Completing this migration will simplify client maintenance, reduce regression risk, and improve documentation quality.
+The first evolution line is full convergence on \texttt{/api/v1}. The long-term direction is a single authoritative API surface, with compatibility aliases used only as temporary migration bridges when strictly necessary. Completing this convergence will simplify client maintenance, reduce regression risk, and improve documentation quality.
 
 A related step is strengthening contract-level validation, including stricter schema checks and clearer error semantics for edge cases. This would improve robustness in multi-client scenarios and make integrations easier for external tools.
 
@@ -15,8 +15,12 @@ Future capture improvements should prioritize operator value over parameter prol
 
 Another relevant direction is richer capture telemetry, such as capture latency metrics, camera state diagnostics, and reliability counters. These additions would support evidence-based tuning and easier post-deployment troubleshooting.
 
+A specific extension line concerns contextual sensing quality. Future work should include calibration and plausibility checks for BME280 values, confidence annotation for GPS fix quality, and policy rules for handling stale or partial metadata in long unattended runs.
+
 \subsection{Gallery and Annotation Workflow Extensions}
 On the gallery side, future work can include richer filtering, sorting, and selection workflows tailored to large datasets. On the annotation side, quality-of-life features such as smarter navigation shortcuts, consistency checks, and annotation review queues could improve throughput and reduce labeling variance.
+
+For media handling, an additional step is adaptive thumbnailing (multi-size cache or device-aware profile) to optimize bandwidth across web/tablet clients while preserving detail quality in focused inspection views.
 
 A complementary direction is explicit annotation quality reporting (for example, disagreement flags, coverage summaries, or TP/FP distribution dashboards) to support dataset curation decisions before model training.
 
@@ -42,4 +46,3 @@ Such scaling should be approached carefully, ensuring that single-node reliabili
 
 \subsection{Final Outlook}
 AgriApp Control is already a functional and field-validated edge platform. Its future evolution should maintain this pragmatic foundation while extending capability in measured steps. If roadmap priorities remain aligned with operational realities, the system can grow from a robust single-node solution into a broader edge data collection framework without losing maintainability.
-

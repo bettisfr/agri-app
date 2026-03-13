@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 import ipaddress
 import struct
+import threading
 
 from backend.bme_reader import get_bme280_reading
 from backend.gps_reader import get_gps_fix
@@ -45,6 +46,44 @@ os.makedirs(LABELS_DIR, exist_ok=True)
 os.makedirs(JSONS_DIR, exist_ok=True)
 os.makedirs(METADATA_DIR, exist_ok=True)
 os.makedirs(THUMBS_DIR, exist_ok=True)
+
+CAPTURE_LOOP_PROC = None
+CAPTURE_LOOP_STARTED_AT = None
+CAPTURE_LOOP_INTERVAL = None
+CAPTURE_LOOP_LOCK = threading.Lock()
+CAPTURE_LOOP_LOG = os.path.join("/tmp", "agriapp-capture-loop.log")
+
+
+def _capture_loop_script_path() -> str:
+    return os.path.join(os.path.dirname(__file__), "scripts", "run_capture.sh")
+
+
+def _capture_loop_is_running() -> bool:
+    global CAPTURE_LOOP_PROC
+    if CAPTURE_LOOP_PROC is None:
+        return False
+    if CAPTURE_LOOP_PROC.poll() is None:
+        return True
+    CAPTURE_LOOP_PROC = None
+    return False
+
+
+def _capture_loop_status_payload():
+    running = _capture_loop_is_running()
+    pid = CAPTURE_LOOP_PROC.pid if running and CAPTURE_LOOP_PROC else None
+    next_capture_in_seconds = None
+    if running and CAPTURE_LOOP_INTERVAL and CAPTURE_LOOP_STARTED_AT:
+        elapsed = max(0, int(time.time()) - int(CAPTURE_LOOP_STARTED_AT))
+        next_capture_in_seconds = (int(CAPTURE_LOOP_INTERVAL) - (elapsed % int(CAPTURE_LOOP_INTERVAL))) % int(CAPTURE_LOOP_INTERVAL)
+    return {
+        "status": "success",
+        "running": running,
+        "pid": pid,
+        "interval_seconds": CAPTURE_LOOP_INTERVAL if running else None,
+        "started_at_ts": CAPTURE_LOOP_STARTED_AT if running else None,
+        "next_capture_in_seconds": next_capture_in_seconds,
+        "log_path": CAPTURE_LOOP_LOG,
+    }
 
 
 # ----------------------------------------------------------------------
@@ -1050,6 +1089,88 @@ def api_capture_oneshot():
             "stdout": stdout[-500:],
         }
     )
+
+
+@app.route("/api/v1/capture/loop/status", methods=["GET"])
+def api_capture_loop_status():
+    with CAPTURE_LOOP_LOCK:
+        payload = _capture_loop_status_payload()
+    return jsonify(payload)
+
+
+@app.route("/api/v1/capture/loop/start", methods=["POST"])
+def api_capture_loop_start():
+    global CAPTURE_LOOP_PROC, CAPTURE_LOOP_STARTED_AT, CAPTURE_LOOP_INTERVAL
+    data = request.get_json(silent=True) or {}
+    interval_raw = data.get("interval_seconds", 300)
+    try:
+        interval = int(interval_raw)
+    except Exception:
+        return jsonify({"status": "error", "message": "invalid interval_seconds"}), 400
+
+    if interval < 5 or interval > 86400:
+        return jsonify({"status": "error", "message": "interval_seconds must be in [5, 86400]"}), 400
+
+    script_path = _capture_loop_script_path()
+    if not os.path.exists(script_path):
+        return jsonify({"status": "error", "message": "run_capture.sh not found"}), 500
+
+    with CAPTURE_LOOP_LOCK:
+        if _capture_loop_is_running():
+            payload = _capture_loop_status_payload()
+            payload["message"] = "capture loop already running"
+            return jsonify(payload), 409
+
+        try:
+            log_f = open(CAPTURE_LOOP_LOG, "a", buffering=1)
+            log_f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] start interval={interval}\n")
+            CAPTURE_LOOP_PROC = subprocess.Popen(
+                ["bash", script_path, "--interval", str(interval)],
+                cwd=os.path.dirname(__file__),
+                stdout=log_f,
+                stderr=log_f,
+                text=True,
+            )
+            CAPTURE_LOOP_STARTED_AT = int(time.time())
+            CAPTURE_LOOP_INTERVAL = interval
+        except Exception as e:
+            CAPTURE_LOOP_PROC = None
+            CAPTURE_LOOP_STARTED_AT = None
+            CAPTURE_LOOP_INTERVAL = None
+            return jsonify({"status": "error", "message": f"failed to start capture loop: {e}"}), 500
+
+        payload = _capture_loop_status_payload()
+        payload["message"] = "capture loop started"
+        return jsonify(payload)
+
+
+@app.route("/api/v1/capture/loop/stop", methods=["POST"])
+def api_capture_loop_stop():
+    global CAPTURE_LOOP_PROC, CAPTURE_LOOP_STARTED_AT, CAPTURE_LOOP_INTERVAL
+
+    with CAPTURE_LOOP_LOCK:
+        if not _capture_loop_is_running():
+            CAPTURE_LOOP_PROC = None
+            CAPTURE_LOOP_STARTED_AT = None
+            CAPTURE_LOOP_INTERVAL = None
+            return jsonify({"status": "success", "running": False, "message": "capture loop already stopped"})
+
+        proc = CAPTURE_LOOP_PROC
+        try:
+            proc.terminate()
+            proc.wait(timeout=8)
+        except Exception:
+            try:
+                proc.kill()
+                proc.wait(timeout=3)
+            except Exception:
+                pass
+
+        CAPTURE_LOOP_PROC = None
+        CAPTURE_LOOP_STARTED_AT = None
+        CAPTURE_LOOP_INTERVAL = None
+
+    return jsonify({"status": "success", "running": False, "message": "capture loop stopped"})
 
 
 @app.route("/api/v1/esp/capture", methods=["GET"])

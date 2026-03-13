@@ -25,6 +25,21 @@ data class CaptureResponse(
     val returncode: Int? = null
 )
 
+data class CaptureLoopStartRequest(
+    val interval_seconds: Int = 300
+)
+
+data class CaptureLoopStatusResponse(
+    val status: String = "",
+    val running: Boolean = false,
+    val pid: Int? = null,
+    val interval_seconds: Int? = null,
+    val next_capture_in_seconds: Int? = null,
+    val started_at_ts: Long? = null,
+    val log_path: String? = null,
+    val message: String? = null
+)
+
 data class ImageMetadata(
     val temperature: Double? = null,
     val pressure: Double? = null,

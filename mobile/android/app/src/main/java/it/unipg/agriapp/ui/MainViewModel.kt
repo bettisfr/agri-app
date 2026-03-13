@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import it.unipg.agriapp.data.ActionResponse
 import it.unipg.agriapp.data.ApiClient
 import it.unipg.agriapp.data.CaptureResponse
+import it.unipg.agriapp.data.CaptureLoopStartRequest
+import it.unipg.agriapp.data.CaptureLoopStatusResponse
 import it.unipg.agriapp.data.DeleteImageRequest
 import it.unipg.agriapp.data.DeleteImageResponse
 import it.unipg.agriapp.data.HealthResponse
@@ -45,6 +47,10 @@ data class MainUiState(
     val viewerImageUrl: String? = null,
     val viewerImageBytes: ByteArray? = null,
     val viewerTitle: String? = null,
+    val autoCaptureRunning: Boolean? = null,
+    val autoCaptureIntervalSeconds: Int? = null,
+    val autoCaptureStartedAtTs: Long? = null,
+    val selectedAutoCaptureIntervalSeconds: Int = 300,
     val log: String = "Ready",
     val busy: Boolean = false
 )
@@ -54,7 +60,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("agriapp_hosts", Context.MODE_PRIVATE)
     private val prefRpiHosts = "rpi_hosts"
     private val prefEspHosts = "esp_hosts"
-
     var state: MainUiState = MainUiState()
         private set
 
@@ -141,6 +146,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         state = state.copy(log = "Gallery refreshed")
     }
 
+    fun refreshGallerySilently(onState: (MainUiState) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val res = api().images(page = state.imagesPage, pageSize = state.imagesPageSize)
+                applyImagesResponse(res, state.selectedImageFilename)
+            } catch (_: Exception) {
+                // Keep silent: this refresh is best-effort and should not disturb UI flow.
+            } finally {
+                onState(state)
+            }
+        }
+    }
+
     fun loadImagesPage(page: Int, onState: (MainUiState) -> Unit) = runCall(onState) {
         val targetPage = page.coerceAtLeast(1)
         val res = api().images(page = targetPage, pageSize = state.imagesPageSize)
@@ -178,6 +196,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewerTitle = preferred ?: "RPi capture",
             log = "Capture: ${res.status} ${res.latest_filename ?: ""}".trim()
         )
+    }
+
+    fun startAutoCapture(onState: (MainUiState) -> Unit, intervalSeconds: Int = 300) = runCall(onState) {
+        val res: CaptureLoopStatusResponse = api().startCaptureLoop(CaptureLoopStartRequest(interval_seconds = intervalSeconds))
+        val stateText = if (res.running) "running" else "stopped"
+        state = state.copy(
+            autoCaptureRunning = res.running,
+            autoCaptureIntervalSeconds = res.interval_seconds,
+            autoCaptureStartedAtTs = if (res.running) res.started_at_ts else null,
+            selectedAutoCaptureIntervalSeconds = intervalSeconds,
+            log = "Auto capture: ${res.status} ($stateText, ${res.interval_seconds ?: "-"}s)"
+        )
+    }
+
+    fun stopAutoCapture(onState: (MainUiState) -> Unit) = runCall(onState) {
+        val res: CaptureLoopStatusResponse = api().stopCaptureLoop()
+        val stateText = if (res.running) "running" else "stopped"
+        state = state.copy(
+            autoCaptureRunning = res.running,
+            autoCaptureIntervalSeconds = res.interval_seconds,
+            autoCaptureStartedAtTs = if (res.running) res.started_at_ts else null,
+            log = "Auto capture: ${res.status} ($stateText)"
+        )
+    }
+
+    fun loadAutoCaptureStatus(onState: (MainUiState) -> Unit) = runCall(onState) {
+        val res: CaptureLoopStatusResponse = api().captureLoopStatus()
+        val stateText = if (res.running) "running" else "stopped"
+        state = state.copy(
+            autoCaptureRunning = res.running,
+            autoCaptureIntervalSeconds = res.interval_seconds,
+            autoCaptureStartedAtTs = if (res.running) res.started_at_ts else null,
+            log = "Auto capture: $stateText ${res.interval_seconds?.let { "(${it}s)" } ?: ""}".trim()
+        )
+    }
+
+    fun setAutoCaptureInterval(intervalSeconds: Int) {
+        val allowed = setOf(60, 120, 180, 300, 600)
+        if (intervalSeconds !in allowed) return
+        state = state.copy(selectedAutoCaptureIntervalSeconds = intervalSeconds)
     }
 
     fun oneShotEsp(onState: (MainUiState) -> Unit) = runCall(onState) {

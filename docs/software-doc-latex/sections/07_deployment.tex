@@ -27,6 +27,25 @@ Capture execution can be triggered in two ways: immediate one-shot actions and u
 
 From an implementation standpoint, environment configuration (e.g., virtual environment paths, capture interval, and network mode dependencies) should be treated as deployment-time parameters, not hardcoded assumptions.
 
+Sensor-aware deployment also requires dependency readiness. In practice, Python runtime must include GPS and BME-related packages (\texttt{pyserial}, \texttt{adafruit-circuitpython-bme280}) and image-processing dependency (\texttt{Pillow}) for server-side thumbnail generation. Hardware checks (e.g., \texttt{i2cdetect -y 1} for BME280 and serial visibility for GPS) are part of deployment validation, not optional post-fixes.
+
+\subsection{BME280 Physical Wiring (Raspberry Pi)}
+For stable operation in I2C mode, only four signal lines are required between BME280 and Raspberry Pi:
+\begin{itemize}
+  \item \textbf{BME280 VCC} $\rightarrow$ \textbf{RPi 3.3V} (physical pin 1),
+  \item \textbf{BME280 GND} $\rightarrow$ \textbf{RPi GND} (physical pin 6),
+  \item \textbf{BME280 SDA} $\rightarrow$ \textbf{RPi SDA1 / GPIO2} (physical pin 3),
+  \item \textbf{BME280 SCL} $\rightarrow$ \textbf{RPi SCL1 / GPIO3} (physical pin 5).
+\end{itemize}
+
+On 6-pin boards (\texttt{VCC, GND, SCL, SDA, CSB, SDO/SDD}), \texttt{CSB} and \texttt{SDO/SDD} are not used in the minimal I2C wiring path. If address forcing is needed, use:
+\begin{itemize}
+  \item \texttt{CSB} high for I2C mode,
+  \item \texttt{SDO} low for address \texttt{0x76}, high for \texttt{0x77}.
+\end{itemize}
+
+After wiring, validate bus visibility with \texttt{i2cdetect -y 1} and confirm that the sensor appears at the expected address before running end-to-end capture tests.
+
 \subsection{Android Client Deployment}
 The Android tablet application is deployed as an APK built with Gradle and installed via ADB during development and validation phases. What matters operationally is not only installation success but integration success: after install, the app must correctly discover the edge node, retrieve status data, browse gallery pages, and execute capture/control actions.
 
@@ -42,6 +61,8 @@ Before relocating the node to a field site, the following checks should be compl
 \begin{itemize}
   \item backend service is active and healthy;
   \item one-shot capture produces expected image artifacts;
+  \item contextual metadata (GPS and/or BME280) is persisted when available;
+  \item thumbnail endpoint responds for recent images;
   \item gallery listing and pagination are responsive;
   \item tablet app can perform discovery and control actions;
   \item target Wi-Fi profiles and priorities are correctly configured.
@@ -53,4 +74,3 @@ Executing this checklist reduces the probability of on-site failures that are co
 After physical installation, validation focuses on runtime continuity under actual environmental conditions. Connectivity, capture, API responsiveness, and control operations should be verified as an integrated workflow. Particular attention should be paid to recovery actions, because robust restart and fallback behavior are often more important than peak throughput in edge deployments.
 
 In summary, deployment quality in AgriApp Control is defined by operational reliability over time, not by installation completion alone.
-

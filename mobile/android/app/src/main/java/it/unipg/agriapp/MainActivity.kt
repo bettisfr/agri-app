@@ -81,6 +81,8 @@ class MainActivity : ComponentActivity() {
                 var discoveryStarted by remember { mutableStateOf(false) }
                 var autoBootstrapDone by remember { mutableStateOf(false) }
                 var showSystemDialog by remember { mutableStateOf(false) }
+                var showShotDialog by remember { mutableStateOf(false) }
+                var showAutoStartDialog by remember { mutableStateOf(false) }
                 var pendingDelete by remember { mutableStateOf<String?>(null) }
                 var showDeleteAllConfirm by remember { mutableStateOf(false) }
 
@@ -96,12 +98,19 @@ class MainActivity : ComponentActivity() {
                         vm.loadSystem { ui = it }
                         vm.loadNetworkMode { ui = it }
                         vm.loadImages { ui = it }
+                        vm.loadAutoCaptureStatus { ui = it }
                     }
                 }
                 LaunchedEffect(Unit) {
                     while (true) {
                         delay(60_000)
                         vm.loadSystem { ui = it }
+                    }
+                }
+                LaunchedEffect(ui.autoCaptureRunning) {
+                    while (ui.autoCaptureRunning == true) {
+                        delay(12_000)
+                        vm.refreshGallerySilently { ui = it }
                     }
                 }
 
@@ -236,37 +245,54 @@ class MainActivity : ComponentActivity() {
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text("Operations", fontWeight = FontWeight.SemiBold)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         ElevatedButton(
-                                            onClick = { vm.oneShotRpi { ui = it } },
+                                            onClick = { showShotDialog = true },
                                             enabled = !ui.busy
                                         ) {
-                                            Text("Shot RPi")
-                                        }
-                                        ElevatedButton(
-                                            onClick = { vm.oneShotEsp { ui = it } },
-                                            enabled = !ui.busy
-                                        ) {
-                                            Text("Shot ESP")
+                                            Text("Shot")
                                         }
                                         FilledTonalButton(
-                                            onClick = { vm.loadSystem { ui = it } },
+                                            onClick = { showAutoStartDialog = true },
                                             enabled = !ui.busy
                                         ) {
-                                            Text("Status")
+                                            Text("Start Auto")
                                         }
                                         FilledTonalButton(
-                                            onClick = { vm.loadImages { ui = it } },
+                                            onClick = { vm.stopAutoCapture { ui = it } },
                                             enabled = !ui.busy
                                         ) {
-                                            Text("Gallery")
+                                            Text("Stop Auto")
                                         }
+                                        Spacer(modifier = Modifier.weight(1f))
                                         FilledTonalButton(
                                             onClick = { showSystemDialog = true },
                                             enabled = !ui.busy
                                         ) {
                                             Text("System")
                                         }
+                                    }
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (ui.autoCaptureRunning == true) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+                                        )
+                                    ) {
+                                        val statusText = when (ui.autoCaptureRunning) {
+                                            true -> "running"
+                                            false -> "stopped"
+                                            null -> "unknown"
+                                        }
+                                        val suffix = ui.autoCaptureIntervalSeconds?.let { " (${it}s)" } ?: ""
+                                        Text(
+                                            text = "Auto capture: $statusText$suffix",
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
                                     }
 
                                 Row(
@@ -359,6 +385,32 @@ class MainActivity : ComponentActivity() {
                         onDismiss = { showSystemDialog = false }
                     )
                 }
+                if (showShotDialog) {
+                    ShotDialog(
+                        busy = ui.busy,
+                        onShotRpi = {
+                            vm.oneShotRpi { ui = it }
+                            showShotDialog = false
+                        },
+                        onShotEsp = {
+                            vm.oneShotEsp { ui = it }
+                            showShotDialog = false
+                        },
+                        onDismiss = { showShotDialog = false }
+                    )
+                }
+                if (showAutoStartDialog) {
+                    StartAutoDialog(
+                        busy = ui.busy,
+                        initialIntervalSeconds = ui.selectedAutoCaptureIntervalSeconds,
+                        onStart = { selected ->
+                            vm.setAutoCaptureInterval(selected)
+                            vm.startAutoCapture({ ui = it }, intervalSeconds = selected)
+                            showAutoStartDialog = false
+                        },
+                        onDismiss = { showAutoStartDialog = false }
+                    )
+                }
                 pendingDelete?.let { filename ->
                     AlertDialog(
                         onDismissRequest = { pendingDelete = null },
@@ -400,6 +452,84 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
+                }
+            }
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun ShotDialog(
+    busy: Boolean,
+    onShotRpi: () -> Unit,
+    onShotEsp: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6))
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Capture source", fontWeight = FontWeight.SemiBold)
+                Text("Choose which device should take the next shot.")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ElevatedButton(onClick = onShotRpi, enabled = !busy) { Text("RPi") }
+                    ElevatedButton(onClick = onShotEsp, enabled = !busy) { Text("ESP") }
+                    FilledTonalButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+                }
+            }
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun StartAutoDialog(
+    busy: Boolean,
+    initialIntervalSeconds: Int,
+    onStart: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selected by remember { mutableStateOf(initialIntervalSeconds) }
+    val options = listOf(60, 120, 180, 300, 600)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6))
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Start auto capture", fontWeight = FontWeight.SemiBold)
+                Text("Choose interval")
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    options.forEach { sec ->
+                        val label = when (sec) {
+                            60 -> "1 min"
+                            120 -> "2 min"
+                            180 -> "3 min"
+                            300 -> "5 min"
+                            600 -> "10 min"
+                            else -> "${sec}s"
+                        }
+                        AssistChip(
+                            onClick = { selected = sec },
+                            label = { Text(if (selected == sec) "• $label" else label) }
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ElevatedButton(onClick = { onStart(selected) }, enabled = !busy) { Text("Start") }
+                    FilledTonalButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
                 }
             }
         }

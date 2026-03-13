@@ -12,6 +12,8 @@ In practical terms, routine operation includes:
 \begin{itemize}
   \item verifying that backend service is active;
   \item verifying that capture produces valid artifacts;
+  \item verifying contextual metadata updates (GPS/BME280) on new captures;
+  \item verifying thumbnail responsiveness for gallery list/grid rendering;
   \item verifying gallery responsiveness and labeling availability;
   \item monitoring free disk space and dataset growth trends.
 \end{itemize}
@@ -35,7 +37,7 @@ Because persistence is file-based, maintenance includes explicit dataset hygiene
 
 Maintainers should define a simple retention policy (for example, based on age, campaign phase, or annotation completeness) and enforce it regularly. This avoids emergency cleanup under low-storage conditions and preserves predictable runtime behavior.
 
-Consistency between image files and annotation artifacts is another hygiene objective. Deletion workflows are designed to clean associated label and JSON files, but periodic audits remain recommended in long-running deployments.
+Consistency between image files and annotation artifacts is another hygiene objective. Deletion workflows are designed to clean associated label, JSON, metadata, and thumbnail-cache artifacts, but periodic audits remain recommended in long-running deployments.
 
 \subsection{Network and Connectivity Maintenance}
 Network maintenance in AgriApp Control is inherently multi-context. The same node can move between infrastructure Wi-Fi and AP rescue operation. Maintaining both paths in a healthy state is essential, because AP mode is often the recovery channel when infrastructure mode fails.
@@ -54,6 +56,7 @@ Incident handling in edge systems should privilege fast triage over premature de
 \begin{enumerate}
   \item verify physical/device status and connectivity;
   \item verify backend health and service state;
+  \item verify sensor paths (GPS serial visibility, BME280 I2C visibility) when metadata is missing;
   \item verify capture/galleries endpoints;
   \item inspect logs for most recent failing operation;
   \item apply smallest safe recovery action (restart before reboot, reboot before power cycle).
@@ -70,4 +73,3 @@ A disciplined logging practice significantly reduces mean time to recovery, espe
 As the project evolves, maintenance effort should remain bounded by design. This requires continued alignment around \texttt{/api/v1}, reduction of legacy route dependencies, and regular pruning of unused operational paths. Maintenance is therefore not only reactive support but also structural simplification over time.
 
 In summary, successful operations in AgriApp Control depend on maintaining a tight feedback loop between deployment, runtime checks, incident handling, and incremental refactoring. This loop is the practical mechanism that keeps an edge-first platform reliable in real usage conditions.
-

@@ -10,10 +10,14 @@ Backend validation starts from endpoint correctness and contract stability. Heal
 
 Capture validation includes both one-shot Raspberry Pi acquisition and ESP proxy-based acquisition. In both cases, the expected outcome is not limited to a success response: generated artifacts must appear in the correct storage paths and be consumable by gallery endpoints.
 
+Sensor validation complements capture checks. GPS and BME280 are tested with dedicated scripts to verify device-level readability before end-to-end capture validation. API-level validation then confirms that contextual values are persisted in image metadata sidecars when available.
+
 Deletion and lifecycle validation are equally critical. Single-image and bulk deletion operations are checked for consistency across image binaries and related annotation files. The goal is to prevent orphaned artifacts and silent divergence between gallery and labeling state.
 
 \subsection{Web and Labeler Validation}
 Web validation focuses on end-user workflows rather than isolated UI rendering. The gallery must correctly handle pagination, modal opening, navigation between images, status refresh, and deletion actions. The labeler must preserve annotation state through save/load cycles, including class and TP/FP semantics.
+
+Performance-oriented validation includes thumbnail behavior: list/grid views should fetch lightweight thumbnail streams while full-resolution binaries are loaded only in detail workflows.
 
 Particular attention is given to state synchronization after mutations. After save or delete operations, the UI should reflect backend truth and avoid stale local assumptions. This behavior is verified through repeated interaction cycles rather than one-time checks.
 
@@ -22,6 +26,8 @@ Tablet validation combines API integration, discovery behavior, and interaction 
 \begin{itemize}
   \item discover reachable Raspberry Pi endpoints quickly;
   \item use paginated gallery contracts consistently;
+  \item refresh gallery state via pull-down without triggering full discovery scans;
+  \item render list thumbnails and open full-resolution detail view;
   \item execute capture actions (RPi and ESP proxy) and render results;
   \item execute system control actions through confirmed flows.
 \end{itemize}
@@ -49,6 +55,8 @@ A deployment iteration is considered acceptable when the following conditions ar
 \begin{itemize}
   \item backend API v1 endpoints respond with expected schemas;
   \item one-shot capture updates gallery state correctly;
+  \item contextual metadata values are persisted and rendered when available;
+  \item thumbnail endpoints return reduced payload images for list/grid views;
   \item gallery pagination and label workflows remain consistent;
   \item Android app build/install/run sequence succeeds;
   \item system control actions are available and safely guarded;
@@ -61,4 +69,3 @@ These criteria emphasize system-level coherence, which is the primary success me
 Even with systematic validation, residual risks remain. Environmental factors such as unstable power, camera hardware variability, and wireless interference can produce intermittent failures not reproducible in lab conditions. Therefore, test outcomes are interpreted together with operational logs and field observations.
 
 This reinforces a key principle of the project: testing is not a final phase, but a continuous process coupled with deployment and daily operation.
-

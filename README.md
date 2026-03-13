@@ -25,7 +25,6 @@ Edge app for Raspberry Pi camera capture + local web gallery/labeling.
 - `systemd/`
   - User services for unattended startup:
     - `agriapp-server.service`
-    - `agriapp-capture.service`
 
 - `old/`
   - Deprecated legacy scripts kept only for reference.
@@ -117,26 +116,31 @@ systemctl --user status agriapp-server.service
 systemctl --user enable agriapp-server.service
 systemctl --user disable agriapp-server.service
 
-# Capture (if you choose systemd for capture)
-systemctl --user start agriapp-capture.service
-systemctl --user stop agriapp-capture.service
-systemctl --user restart agriapp-capture.service
-systemctl --user status agriapp-capture.service
-systemctl --user enable agriapp-capture.service
-systemctl --user disable agriapp-capture.service
-
 # Logs
 journalctl --user -u agriapp-server.service -n 100 --no-pager
 journalctl --user -u agriapp-server.service -f
-journalctl --user -u agriapp-capture.service -n 100 --no-pager
-journalctl --user -u agriapp-capture.service -f
+```
+
+### Capture Loop via API (recommended)
+
+```bash
+# Status
+curl http://<rpi-ip>:5000/api/v1/capture/loop/status
+
+# Start every 300 seconds
+curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/start \
+  -H "Content-Type: application/json" \
+  -d '{"interval_seconds":300}'
+
+# Stop
+curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/stop
 ```
 
 ## Notes
 
 - Current preferred deployment strategy:
   - `systemd` for server
-  - `cron` (or systemd) for timed capture, depending on scheduling needs.
+  - timed capture controlled via API (`/api/v1/capture/loop/*`) from web/tablet.
 - The gallery/labeler work on images in:
   - `static/uploads/images`
   - labels in `static/uploads/labels`
