@@ -62,7 +62,7 @@ The architecture also includes practical mechanisms for multi-network portabilit
 \subsection{Service and Interface Boundaries}
 The backend exposes a versioned API namespace under \texttt{/api/v1}. Versioning is not treated as documentation formality; it defines a stable contract layer across clients and enables controlled evolution of the platform. Legacy routes can be retained as aliases during migration windows, but the architectural direction remains strongly centered on versioned endpoints.
 
-Client responsibilities are intentionally limited. The web gallery and the tablet app focus on orchestration, visualization, and interaction, while state authority remains in the backend. This separation avoids duplicated business rules in frontend code and preserves consistency when multiple clients operate on the same dataset.
+Client responsibilities are intentionally limited. The web gallery and the tablet app focus on orchestration, visualization, and interaction, while state authority remains in the backend. On Android, this boundary is reflected in the UI split between a control dashboard (operations/discovery) and a dedicated gallery activity (dataset browsing). This separation avoids duplicated business rules in frontend code and preserves consistency when multiple clients operate on the same dataset.
 
 \subsection{Architectural Rationale}
 From an engineering perspective, the chosen architecture prioritizes robustness, observability, and maintainability over maximal feature density. File-based persistence, explicit lifecycle operations, and API-centric coordination may appear conservative, but they produce strong operational benefits in edge deployments:

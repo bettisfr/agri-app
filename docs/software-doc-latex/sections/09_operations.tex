@@ -30,6 +30,7 @@ Capture management now has two complementary modes:
 \end{itemize}
 
 For unattended operation, interval selection is an operational parameter (e.g., 1--10 minute presets in tablet UI or explicit API payloads). Start/stop semantics are explicit; operators should always verify loop status after transitions. In the Android control app, operators can start loops for \texttt{RPi}, \texttt{ESP}, or \texttt{Both}, while status remains source-specific.
+Current ESP unattended operation is implemented through the same ESP proxy capture API used for one-shot, so metadata persistence behavior remains aligned between manual and automatic captures.
 
 \subsection{Metadata Operations (GPS/BME280)}
 Metadata is persisted opportunistically. Operations should treat missing sensor values as a diagnosable condition, not necessarily as a capture failure. If GPS or BME data disappears unexpectedly, the recommended sequence is:
@@ -41,6 +42,7 @@ Metadata is persisted opportunistically. Operations should treat missing sensor 
 \end{enumerate}
 
 This avoids unnecessary full restarts when the issue is local to one sensor path.
+When ESP captures arrive without contextual values, operations now rely on metadata sidecar normalization/fallback at backend level to keep gallery behavior coherent while sensor diagnostics are performed.
 
 \subsection{Storage Hygiene}
 Because persistence is file-based, dataset hygiene is an explicit operational task. The platform supports single delete, delete-all, and dataset export. Maintainers should define a cadence for cleanup or off-device archival to avoid emergency low-space events.
@@ -67,7 +69,7 @@ This order minimizes downtime and preserves diagnostic signal.
 
 \subsection{Operational Logging}
 Effective troubleshooting depends on correlated logs. The project uses a combination of backend logs, systemd status/logs, and Android in-app logs. Operators should record at least three contextual tags when reporting incidents: active network mode, active host/IP, and last successful action.
-Recent app iterations expanded in-app logging with structured operational events (discovery start/end, network switch milestones, auto-loop lifecycle changes, one-shot outcomes, and newly captured filenames). This provides stronger field traceability without increasing shell dependency.
+Recent app iterations keep in-app logging structured but concise (discovery milestones, network switch milestones, loop lifecycle changes, and shot outcomes). Detailed contextual values are expected to be inspected from metadata artifacts and gallery views rather than verbose control-log lines.
 
 \subsection{Maintenance Outlook}
 Maintenance effort should continue reducing legacy complexity. The most valuable ongoing work is progressive legacy endpoint retirement, tighter contract tests on \texttt{/api/v1}, and continued UI/ops simplification so that field operation stays predictable even as features grow.

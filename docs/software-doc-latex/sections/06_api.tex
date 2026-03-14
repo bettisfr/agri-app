@@ -85,9 +85,9 @@ Image items include contextual metadata fields (GPS latitude/longitude and BME28
 \subsection{Capture-Specific Notes}
 \begin{itemize}
   \item \textbf{RPi one-shot} (\texttt{/api/v1/capture/rpi/oneshot}) executes \texttt{capture\_rpi.sh --oneshot}, stores the generated image, enriches metadata, and returns latest filename.
-  \item \textbf{ESP one-shot} (\texttt{/api/v1/capture/esp/oneshot}) requires query \texttt{esp\_base}, validates private IP constraints, executes \texttt{capture\_esp.py}, stores an \texttt{esp\_...} image locally, and streams JPEG bytes as response.
+  \item \textbf{ESP one-shot} (\texttt{/api/v1/capture/esp/oneshot}) requires query \texttt{esp\_base}, validates private IP constraints, executes \texttt{capture\_esp.py}, stores an \texttt{esp\_...} image locally, and streams JPEG bytes as response. The response includes optional headers carrying saved filename and metadata hints (\texttt{X-AgriApp-*}) for client-side fast feedback.
   \item \textbf{RPi loop} endpoints (\texttt{/api/v1/capture/loop/*}) control unattended periodic capture via backend-managed process state; \texttt{/start} accepts \texttt{interval\_seconds} in a bounded range.
-  \item \textbf{ESP loop} endpoints (\texttt{/api/v1/capture/esp/loop/*}) expose the same control model for ESP, with mandatory \texttt{esp\_base} on start.
+  \item \textbf{ESP loop} endpoints (\texttt{/api/v1/capture/esp/loop/*}) expose the same control model for ESP, with mandatory \texttt{esp\_base} on start. The loop invokes the backend ESP one-shot proxy path to preserve metadata sidecar consistency across manual and unattended captures.
 \end{itemize}
 
 \subsection{Error Model}

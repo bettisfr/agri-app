@@ -3,12 +3,12 @@
 \subsection{Capture Orchestration Module}
 This module governs all image acquisition paths and normalizes them into a single storage lifecycle. It includes Raspberry Pi one-shot and loop capture, plus ESP32-CAM proxy capture. The operational goal is not only ``take a picture'' but ``produce a valid artifact that enters the gallery pipeline consistently''.
 
-On Raspberry Pi, capture execution is delegated to \texttt{scripts/capture\_rpi.sh} and \texttt{client.py}, preserving camera tuning control while keeping API entry points clean. For ESP, the backend uses \texttt{scripts/capture\_esp.py} with controlled defaults (currently QXGA and high quality profile) and then stores the result locally with an \texttt{esp\_} filename prefix.
+On Raspberry Pi, capture execution is delegated to \texttt{scripts/capture\_rpi.sh} and \texttt{client.py}, preserving camera tuning control while keeping API entry points clean. For ESP, one-shot capture uses the backend proxy path and \texttt{scripts/capture\_esp.py} with controlled defaults, then stores the result locally with an \texttt{esp\_} filename prefix. Unattended ESP capture uses the same proxy path to keep artifact handling consistent.
 
 The module also owns loop lifecycle semantics (start, stop, status). This keeps unattended acquisition under API control and decouples day-to-day operations from manual shell sessions.
 
 \subsection{Sensor Enrichment Module}
-This module performs best-effort contextual sampling and metadata persistence. It integrates GPS and BME280 readings, merges them into a normalized metadata object, and writes sidecar files in \texttt{static/uploads/metadata}.
+This module performs best-effort contextual sampling and metadata persistence. It integrates GPS and BME280 readings, merges them into a normalized metadata object, and writes sidecar files in \texttt{static/uploads/metadata}. The module also includes metadata-sidecar normalization logic for ESP images so that missing sidecars are reconstructed and stale gaps are reduced over time.
 
 A key property is tolerance to partial availability. If one sensor is unavailable, available values are still persisted and capture remains successful. This design keeps the dataset usable even under non-ideal field conditions and avoids hard dependencies that would reduce acquisition continuity.
 
@@ -40,7 +40,7 @@ Its value is practical: routine maintenance can be executed from tablet/web with
 Two client families consume the same backend semantics:
 \begin{itemize}
   \item Web modules: gallery + labeler with browser-centric interactions,
-  \item Android modules: control dashboard + paginated gallery + image detail dialog.
+  \item Android modules: control dashboard + dedicated gallery activity (grid) + image detail dialog.
 \end{itemize}
 
 The project deliberately keeps business rules out of UI layers. Clients orchestrate and visualize; server APIs remain the source of truth.

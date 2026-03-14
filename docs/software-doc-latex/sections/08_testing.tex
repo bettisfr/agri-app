@@ -9,6 +9,7 @@ For this reason, test activities are structured across multiple layers: backend 
 Backend validation starts from endpoint correctness and contract stability. Health, system status, capture, gallery, labels, and control routes are verified through direct HTTP calls. This step confirms that request/response schemas remain compatible with clients and that versioned endpoints under \texttt{/api/v1} are operational.
 
 Capture validation includes both one-shot Raspberry Pi acquisition and ESP proxy-based acquisition. In both cases, the expected outcome is not limited to a success response: generated artifacts must appear in the correct storage paths and be consumable by gallery endpoints.
+For ESP specifically, validation now includes a sidecar integrity check: each new \texttt{esp\_*.jpg} should have a corresponding metadata JSON after one-shot or loop capture. This check prevents silent drift between image binaries and contextual metadata.
 
 Sensor validation complements capture checks. GPS and BME280 are tested with dedicated scripts to verify device-level readability before end-to-end capture validation. API-level validation then confirms that contextual values are persisted in image metadata sidecars when available.
 
@@ -27,7 +28,7 @@ Tablet validation combines API integration, discovery behavior, and interaction 
   \item discover reachable Raspberry Pi endpoints quickly;
   \item use paginated gallery contracts consistently;
   \item refresh gallery state via pull-down without triggering full discovery scans;
-  \item render list thumbnails and open full-resolution detail view;
+  \item render gallery grid thumbnails and open full-resolution detail view;
   \item execute capture actions (RPi and ESP proxy) and render results;
   \item execute system control actions through confirmed flows.
 \end{itemize}

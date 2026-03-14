@@ -1,5 +1,6 @@
 package it.unipg.agriapp
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -27,9 +28,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
@@ -67,7 +71,6 @@ import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.ExperimentalMaterialApi
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -83,8 +86,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             AgriAppTheme {
-                val compactShape = RoundedCornerShape(6.dp)
-                val compactBtnPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                val compactShape = RoundedCornerShape(12.dp)
+                val compactBtnPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 val vm: MainViewModel = viewModel()
                 var ui by remember { mutableStateOf(vm.state) }
                 var discoveryStarted by remember { mutableStateOf(false) }
@@ -127,15 +130,14 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     while (true) {
                         delay(60_000)
-                        vm.loadSystem { ui = it }
-                        vm.loadNetworkMode { ui = it }
+                        vm.refreshSystemAndNetworkSilently { ui = it }
                     }
                 }
                 LaunchedEffect(ui.autoCaptureRpiRunning, ui.autoCaptureEspRunning) {
                     while (ui.autoCaptureRpiRunning == true || ui.autoCaptureEspRunning == true) {
                         delay(12_000)
                         vm.refreshGallerySilently { ui = it }
-                        vm.loadAutoCaptureStatus { ui = it }
+                        vm.loadAutoCaptureStatusSilently { ui = it }
                     }
                 }
                 LaunchedEffect(ui.autoDiscoverToken) {
@@ -153,261 +155,271 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color(0xFFE8F5E9),
-                                    Color(0xFFF4FBF2),
-                                    Color(0xFFFFFFFF),
-                                )
-                            )
-                        )
-                        .padding(8.dp)
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = compactShape,
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FCF6)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    topBar = {
+                        TopAppBar(
+                            title = { Text("AgriApp Control", fontWeight = FontWeight.SemiBold) },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            actions = {
                                 Text(
-                                    "AgriApp Control",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    "Host: ${ui.connectedHost?.removePrefix("http://") ?: "not connected"}",
-                                    style = MaterialTheme.typography.bodyLarge,
+                                    text = ui.connectedHost?.removePrefix("http://") ?: "No active host",
+                                    modifier = Modifier.padding(end = 12.dp),
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                        }
-
-                        Spacer(Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Card(
-                                modifier = Modifier
-                                    .weight(0.36f)
-                                    .fillMaxSize(),
-                                shape = compactShape,
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFDF8)),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text("Connections", fontWeight = FontWeight.SemiBold)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        FilledTonalButton(onClick = { vm.discoverLan { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
-                                            Text("Discover")
-                                        }
-                                        FilledTonalButton(onClick = { vm.setNetworkMode("wifi_only") { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
-                                            Text("WiFi")
-                                        }
-                                        FilledTonalButton(onClick = { vm.setNetworkMode("ap_only") { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
-                                            Text("AP")
-                                        }
-                                    }
-
-                                    if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.horizontalScroll(rememberScrollState())
-                                        ) {
-                                            Text("RPi", fontWeight = FontWeight.SemiBold)
-                                            ui.discoveredRpiBaseUrls.take(4).forEach { host ->
-                                                HostChip(
-                                                    label = compactHostLabel(host),
-                                                    onClick = {
-                                                        vm.updateBaseUrl(host)
-                                                        ui = vm.state
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
-                                    if (ui.discoveredEspBaseUrls.isNotEmpty()) {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.horizontalScroll(rememberScrollState())
-                                        ) {
-                                            Text("ESP", fontWeight = FontWeight.SemiBold)
-                                            ui.discoveredEspBaseUrls.take(4).forEach { host ->
-                                                HostChip(
-                                                    label = compactHostLabel(host),
-                                                    onClick = {
-                                                        vm.selectEspHost(host)
-                                                        ui = vm.state
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
-                                    if (ui.discoveredRpiBaseUrls.isEmpty() && ui.discoveredEspBaseUrls.isEmpty()) {
-                                        Text("No hosts found yet")
-                                    }
-
-                                    InfoPanel(ui)
-                                }
-                            }
-
-                            Card(
-                                modifier = Modifier
-                                    .weight(0.64f)
-                                    .fillMaxSize(),
-                                shape = compactShape,
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFDF8)),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text("Operations", fontWeight = FontWeight.SemiBold)
-                                    val anyAutoRunning = (ui.autoCaptureRpiRunning == true) || (ui.autoCaptureEspRunning == true)
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        ElevatedButton(
-                                            onClick = { showShotDialog = true },
-                                            enabled = !ui.busy,
-                                            shape = compactShape,
-                                            contentPadding = compactBtnPadding
-                                        ) {
-                                            Text("Shot")
-                                        }
-                                        FilledTonalButton(
-                                            onClick = { showAutoStartDialog = true },
-                                            enabled = !ui.busy && !anyAutoRunning,
-                                            shape = compactShape,
-                                            contentPadding = compactBtnPadding
-                                        ) {
-                                            Text("Start Auto")
-                                        }
-                                        FilledTonalButton(
-                                            onClick = { vm.stopAutoCapture({ ui = it }, "both") },
-                                            enabled = !ui.busy && anyAutoRunning,
-                                            shape = compactShape,
-                                            contentPadding = compactBtnPadding
-                                        ) {
-                                            Text("Stop Auto")
-                                        }
-                                        Spacer(modifier = Modifier.weight(1f))
-                                        FilledTonalButton(
-                                            onClick = { showSystemDialog = true },
-                                            enabled = !ui.busy,
-                                            shape = compactShape,
-                                            contentPadding = compactBtnPadding
-                                        ) {
-                                            Text("System")
-                                        }
-                                    }
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = compactShape,
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = if (ui.autoCaptureRpiRunning == true || ui.autoCaptureEspRunning == true) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
-                                        )
-                                    ) {
-                                        Text(
-                                            text = "Auto RPi: ${
-                                                if (ui.autoCaptureRpiRunning == true) {
-                                                    "running${ui.autoCaptureRpiIntervalSeconds?.let { " (${it}s)" } ?: ""}"
-                                                } else "stopped"
-                                            } | Auto ESP: ${
-                                                if (ui.autoCaptureEspRunning == true) {
-                                                    "running${ui.autoCaptureEspIntervalSeconds?.let { " (${it}s)" } ?: ""}"
-                                                } else "stopped"
-                                            }",
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Latest Images", fontWeight = FontWeight.SemiBold)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        TextButton(
-                                            onClick = { vm.prevImagesPage { ui = it } },
-                                            enabled = !ui.busy && ui.imagesPage > 1
-                                        ) { Text("Prev") }
-                                        Text("${ui.imagesPage}/${ui.imagesTotalPages}")
-                                        TextButton(
-                                            onClick = { vm.nextImagesPage { ui = it } },
-                                            enabled = !ui.busy && ui.imagesPage < ui.imagesTotalPages
-                                        ) { Text("Next") }
-                                        TextButton(
-                                            onClick = { showDeleteAllConfirm = true },
-                                            enabled = !ui.busy && ui.images.isNotEmpty()
-                                        ) {
-                                            Text("Delete All")
-                                        }
-                                    }
-                                }
-                                ImageList(
-                                    modifier = Modifier.weight(1f),
-                                    ui = ui,
-                                    refreshing = galleryRefreshing,
-                                    onRefresh = {
-                                        galleryRefreshing = true
-                                        vm.refreshGalleryOnly {
-                                            ui = it
-                                            if (!it.busy) {
-                                                galleryRefreshing = false
-                                            }
-                                        }
-                                    },
-                                    onImageClick = {
-                                        vm.selectRpiImage(it)
-                                        ui = vm.state
-                                    },
-                                    onDeleteClick = { pendingDelete = it }
-                                )
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        BottomLogPanel(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp),
-                            entries = logEntries
                         )
                     }
-                    if (ui.busy) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator()
+                ) { innerPadding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(0.66f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1.0f),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Card(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
+                                        shape = compactShape,
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("Connections", fontWeight = FontWeight.SemiBold)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                FilledTonalButton(onClick = { vm.discoverLan { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
+                                                    Text("Discover")
+                                                }
+                                                FilledTonalButton(onClick = { vm.setNetworkMode("wifi_only") { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
+                                                    Text("WiFi")
+                                                }
+                                                FilledTonalButton(onClick = { vm.setNetworkMode("ap_only") { ui = it } }, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) {
+                                                    Text("AP")
+                                                }
+                                            }
+
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.horizontalScroll(rememberScrollState())
+                                            ) {
+                                                Text("RPi", fontWeight = FontWeight.SemiBold)
+                                                if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
+                                                    ui.discoveredRpiBaseUrls.take(2).forEach { host ->
+                                                        HostChip(
+                                                            label = compactHostLabel(host),
+                                                            onClick = {
+                                                                vm.updateBaseUrl(host)
+                                                                ui = vm.state
+                                                            }
+                                                        )
+                                                    }
+                                                } else {
+                                                    Text("n/a", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                                Spacer(Modifier.width(10.dp))
+                                                Text("ESP", fontWeight = FontWeight.SemiBold)
+                                                if (ui.discoveredEspBaseUrls.isNotEmpty()) {
+                                                    ui.discoveredEspBaseUrls.take(2).forEach { host ->
+                                                        HostChip(
+                                                            label = compactHostLabel(host),
+                                                            onClick = {
+                                                                vm.selectEspHost(host)
+                                                                ui = vm.state
+                                                            }
+                                                        )
+                                                    }
+                                                } else {
+                                                    Text("n/a", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Card(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
+                                        shape = compactShape,
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("Operations", fontWeight = FontWeight.SemiBold)
+                                            val anyAutoRunning = (ui.autoCaptureRpiRunning == true) || (ui.autoCaptureEspRunning == true)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                ElevatedButton(
+                                                    onClick = { showShotDialog = true },
+                                                    enabled = !ui.busy,
+                                                    shape = compactShape,
+                                                    contentPadding = compactBtnPadding
+                                                ) {
+                                                    Text("Shot")
+                                                }
+                                                FilledTonalButton(
+                                                    onClick = { showAutoStartDialog = true },
+                                                    enabled = !ui.busy && !anyAutoRunning,
+                                                    shape = compactShape,
+                                                    contentPadding = compactBtnPadding
+                                                ) {
+                                                    Text("Start Auto")
+                                                }
+                                                FilledTonalButton(
+                                                    onClick = { vm.stopAutoCapture({ ui = it }, "both") },
+                                                    enabled = !ui.busy && anyAutoRunning,
+                                                    shape = compactShape,
+                                                    contentPadding = compactBtnPadding
+                                                ) {
+                                                    Text("Stop Auto")
+                                                }
+                                                Spacer(modifier = Modifier.weight(1f))
+                                                FilledTonalButton(
+                                                    onClick = { showSystemDialog = true },
+                                                    enabled = !ui.busy,
+                                                    shape = compactShape,
+                                                    contentPadding = compactBtnPadding
+                                                ) {
+                                                    Text("System")
+                                                }
+                                                FilledTonalButton(
+                                                    onClick = {
+                                                        val intent = Intent(this@MainActivity, GalleryActivity::class.java)
+                                                        intent.putExtra(GalleryActivity.EXTRA_BASE_URL, ui.baseUrl)
+                                                        startActivity(intent)
+                                                    },
+                                                    enabled = !ui.busy,
+                                                    shape = compactShape,
+                                                    contentPadding = compactBtnPadding
+                                                ) {
+                                                    Text("Gallery")
+                                                }
+                                            }
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = compactShape,
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = if (ui.autoCaptureRpiRunning == true || ui.autoCaptureEspRunning == true) Color(0xFFE6F4EA) else Color(0xFFF7F8E8)
+                                                )
+                                            ) {
+                                                Text(
+                                                    text = "Auto RPi: ${
+                                                        if (ui.autoCaptureRpiRunning == true) {
+                                                            "running${ui.autoCaptureRpiIntervalSeconds?.let { " (${it}s)" } ?: ""}"
+                                                        } else "stopped"
+                                                    } | Auto ESP: ${
+                                                        if (ui.autoCaptureEspRunning == true) {
+                                                            "running${ui.autoCaptureEspIntervalSeconds?.let { " (${it}s)" } ?: ""}"
+                                                        } else "stopped"
+                                                    }",
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(0.82f),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    InfoPanel(
+                                        ui = ui,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                    )
+                                    Card(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
+                                        shape = compactShape,
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text("Gallery", fontWeight = FontWeight.SemiBold)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text("Items: ${ui.imagesTotalItems}  |  Page: ${ui.imagesPage}/${ui.imagesTotalPages}")
+                                                    Text("Latest: ${ui.images.firstOrNull()?.filename ?: "n/a"}")
+                                                }
+                                                Spacer(Modifier.width(8.dp))
+                                                FilledTonalButton(
+                                                    onClick = {
+                                                        val intent = Intent(this@MainActivity, GalleryActivity::class.java)
+                                                        intent.putExtra(GalleryActivity.EXTRA_BASE_URL, ui.baseUrl)
+                                                        startActivity(intent)
+                                                    },
+                                                    enabled = !ui.busy,
+                                                    shape = compactShape,
+                                                    contentPadding = compactBtnPadding
+                                                ) {
+                                                    Text("Open Full Gallery")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            BottomLogPanel(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(0.34f),
+                                entries = logEntries
+                            )
+                        }
+                        if (ui.busy) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color(0x44000000)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
                         }
                     }
                 }
@@ -731,19 +743,22 @@ private fun SystemActionsDialog(
 }
 
 @androidx.compose.runtime.Composable
-private fun InfoPanel(ui: MainUiState) {
+private fun InfoPanel(
+    ui: MainUiState,
+    modifier: Modifier = Modifier
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
             val freeMb = ui.system?.disk_free_bytes?.div(1024 * 1024) ?: 0
-            val apText = if (ui.network?.ap_active == true) "on" else "off"
-            val clientText = if (ui.network?.client_active == true) "on" else "off"
-            Text("Status", fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Text("Free ${freeMb} MB")
-            Spacer(Modifier.height(4.dp))
+            Text("Status", fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text("Free storage: ${freeMb} MB")
+            Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 val apOn = ui.network?.ap_active == true
                 val clientOn = ui.network?.client_active == true
@@ -756,12 +771,12 @@ private fun InfoPanel(ui: MainUiState) {
 
 @androidx.compose.runtime.Composable
 private fun StatusBadge(label: String, ok: Boolean) {
-    val bg = if (ok) Color(0xFFDDF2DF) else Color(0xFFFFEDD5)
-    val fg = if (ok) Color(0xFF1F6B2A) else Color(0xFF9A3412)
+    val bg = if (ok) Color(0xFFE4F4E8) else Color(0xFFFFF0E0)
+    val fg = if (ok) Color(0xFF1D5F2A) else Color(0xFF8A3A00)
     Box(
         modifier = Modifier
-            .background(bg, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .background(bg, RoundedCornerShape(999.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp)
     ) {
         Text(label, color = fg, fontWeight = FontWeight.SemiBold)
     }
@@ -774,11 +789,11 @@ private fun HostChip(
 ) {
     Box(
         modifier = Modifier
-            .background(Color.White, RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(999.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 3.dp)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
     ) {
-        Text(label, fontWeight = FontWeight.Medium)
+        Text(label, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -803,15 +818,15 @@ private fun BottomLogPanel(
     }
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3F9EE))
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(6.dp)) {
-            Text("Log", fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(3.dp))
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.White, RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
                     .padding(4.dp)
             ) {
                 LazyColumn(
@@ -835,8 +850,8 @@ private fun BottomLogPanel(
                     val visible = listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
                     val first = listState.firstVisibleItemIndex.coerceAtLeast(0)
 
-                    val trackColor = Color(0xFFCFDAC8)
-                    val thumbColor = Color(0xFF6F8E6A)
+                    val trackColor = Color(0xFFC7D6C3)
+                    val thumbColor = Color(0xFF5E7F58)
 
                     drawRoundRect(
                         color = trackColor,
@@ -895,7 +910,9 @@ private fun ImageList(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 8.dp)
+                            .padding(bottom = 8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f))
                     ) {
                         Row(
                             modifier = Modifier

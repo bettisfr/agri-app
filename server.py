@@ -512,6 +512,77 @@ def enrich_image_with_live_metadata(image_path: str) -> dict:
     return metadata
 
 
+def metadata_has_any_sensor_value(metadata: dict | None) -> bool:
+    if not isinstance(metadata, dict):
+        return False
+    return any(
+        metadata.get(k) is not None
+        for k in ("latitude", "longitude", "temperature", "humidity", "pressure")
+    )
+
+
+def latest_recent_metadata_fallback(max_age_seconds: int = 600) -> dict:
+    """
+    Return most recent non-empty metadata from uploads/metadata when available.
+    This is used as fallback when live GPS/BME sampling fails at capture time.
+    """
+    try:
+        now_ts = time.time()
+        candidates = []
+        for path in glob.glob(os.path.join(METADATA_DIR, "*.json")):
+            try:
+                mtime = os.path.getmtime(path)
+            except Exception:
+                continue
+            if now_ts - mtime > max_age_seconds:
+                continue
+            candidates.append((mtime, path))
+        candidates.sort(reverse=True, key=lambda x: x[0])
+        for _, path in candidates:
+            try:
+                with open(path, "r") as f:
+                    data = json.load(f)
+                if metadata_has_any_sensor_value(data):
+                    return data
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return dict(DEFAULT_METADATA)
+
+
+def ensure_metadata_for_image(image_path: str, filename: str) -> dict:
+    """
+    Ensure an image has a metadata sidecar.
+    For ESP images, if metadata is empty, try live enrichment then fallback.
+    """
+    metadata = extract_metadata(image_path)
+    sidecar_path = metadata_path_for_image_path(image_path)
+    sidecar_exists = os.path.exists(sidecar_path)
+
+    if filename.lower().startswith("esp_") and not metadata_has_any_sensor_value(metadata):
+        metadata = enrich_image_with_live_metadata(image_path)
+        if not metadata_has_any_sensor_value(metadata):
+            fallback = latest_recent_metadata_fallback(max_age_seconds=900)
+            if metadata_has_any_sensor_value(fallback):
+                metadata = {
+                    "temperature": fallback.get("temperature"),
+                    "humidity": fallback.get("humidity"),
+                    "pressure": fallback.get("pressure"),
+                    "latitude": fallback.get("latitude"),
+                    "longitude": fallback.get("longitude"),
+                    "user_comment": metadata.get("user_comment", ""),
+                }
+
+    if (not sidecar_exists) or (filename.lower().startswith("esp_") and metadata_has_any_sensor_value(metadata)):
+        try:
+            save_metadata_for_image_path(image_path, metadata)
+        except Exception:
+            pass
+
+    return metadata
+
+
 # ----------------------------------------------------------------------
 # Image listing (gallery)
 # ----------------------------------------------------------------------
@@ -556,7 +627,7 @@ def get_sorted_images(image_folder):
         # sort key based on filename timestamp (or mtime as fallback)
         sort_ts = parse_timestamp_from_filename(image, file_path)
 
-        metadata = extract_metadata(file_path)
+        metadata = ensure_metadata_for_image(file_path, image)
 
         image_files_with_metadata.append(
             {
@@ -1338,6 +1409,32 @@ def api_esp_capture_proxy():
         with open(saved_path, "wb") as out:
             out.write(data)
         saved_metadata = enrich_image_with_live_metadata(saved_path)
+        if not metadata_has_any_sensor_value(saved_metadata):
+            fallback = latest_recent_metadata_fallback(max_age_seconds=900)
+            if metadata_has_any_sensor_value(fallback):
+                saved_metadata = {
+                    "temperature": fallback.get("temperature"),
+                    "humidity": fallback.get("humidity"),
+                    "pressure": fallback.get("pressure"),
+                    "latitude": fallback.get("latitude"),
+                    "longitude": fallback.get("longitude"),
+                    "user_comment": "",
+                }
+                try:
+                    save_metadata_for_image_path(saved_path, saved_metadata)
+                except Exception:
+                    pass
+        else:
+            try:
+                save_metadata_for_image_path(saved_path, saved_metadata)
+            except Exception:
+                pass
+        if not metadata_has_any_sensor_value(saved_metadata):
+            # Ensure metadata sidecar exists even when all sensor values are unavailable.
+            try:
+                save_metadata_for_image_path(saved_path, saved_metadata)
+            except Exception:
+                pass
     except Exception:
         # Keep response usable even if local save fails.
         saved_name = ""
@@ -1356,6 +1453,12 @@ def api_esp_capture_proxy():
             resp.headers["X-AgriApp-Latitude"] = str(saved_metadata["latitude"])
         if saved_metadata.get("longitude") is not None:
             resp.headers["X-AgriApp-Longitude"] = str(saved_metadata["longitude"])
+        if saved_metadata.get("temperature") is not None:
+            resp.headers["X-AgriApp-Temperature"] = str(saved_metadata["temperature"])
+        if saved_metadata.get("humidity") is not None:
+            resp.headers["X-AgriApp-Humidity"] = str(saved_metadata["humidity"])
+        if saved_metadata.get("pressure") is not None:
+            resp.headers["X-AgriApp-Pressure"] = str(saved_metadata["pressure"])
     return resp
 
 
@@ -1393,16 +1496,13 @@ def api_esp_capture_loop_start():
     except Exception:
         return jsonify({"status": "error", "message": "invalid esp_base"}), 400
 
-    helper = _capture_esp_helper_path()
-    if not os.path.exists(helper):
-        return jsonify({"status": "error", "message": "capture_esp.py helper not found"}), 500
-
     base = f"{parsed.scheme}://{parsed.netloc}"
-    capture_url = f"{base}/capture"
+    esp_base_enc = urllib.parse.quote(base, safe="")
     loop_cmd = (
         f'while true; do '
-        f'python3 "{helper}" --url "{capture_url}" --framesize qxga --timeout 20 '
-        f'--out "{IMAGES_DIR}/esp_$(date +%Y%m%d-%H%M%S).jpg"; '
+        f'curl -fsS --max-time 50 '
+        f'"http://127.0.0.1:5000/api/v1/capture/esp/oneshot?esp_base={esp_base_enc}" '
+        f'-o /dev/null || echo "[WARN] esp loop capture failed"; '
         f'sleep {interval}; '
         f'done'
     )

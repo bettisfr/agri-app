@@ -32,6 +32,17 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
+private data class EspProxyCaptureResult(
+    val jpegBytes: ByteArray?,
+    val error: String?,
+    val savedFilename: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val temperature: Double? = null,
+    val humidity: Double? = null,
+    val pressure: Double? = null,
+)
+
 data class MainUiState(
     val baseUrl: String = "http://raspberrypi.local:5000",
     val connectedHost: String? = null,
@@ -105,6 +116,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val ap = if (res.ap_active) "AP on" else "AP off"
         val wifi = if (res.client_active) "WiFi on" else "WiFi off"
         state = state.copy(network = res, connectedHost = state.baseUrl, log = "Network ${res.mode} ($ap, $wifi)")
+    }
+
+    fun refreshSystemAndNetworkSilently(onState: (MainUiState) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val sys = api().systemStatus()
+                val net = api().networkMode()
+                rememberRpiHost(state.baseUrl)
+                state = state.copy(
+                    system = sys,
+                    network = net,
+                    connectedHost = state.baseUrl
+                )
+            } catch (_: Exception) {
+                // Best-effort silent refresh.
+            } finally {
+                onState(state)
+            }
+        }
     }
 
     fun setNetworkMode(mode: String, onState: (MainUiState) -> Unit) = runCall(onState) {
@@ -262,6 +292,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val res: CaptureResponse = api().oneShot()
         val imagesRes = api().images(page = 1, pageSize = state.imagesPageSize)
         val preferred = res.latest_filename ?: imagesRes.items.firstOrNull()?.filename
+        val capturedItem = imagesRes.items.firstOrNull { it.filename == preferred } ?: imagesRes.items.firstOrNull()
         rememberRpiHost(state.baseUrl)
         applyImagesResponse(imagesRes, preferred)
         state = state.copy(
@@ -445,6 +476,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         lastAutoEspRunning = espRes?.running
     }
 
+    fun loadAutoCaptureStatusSilently(onState: (MainUiState) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val rpiRes = api().captureLoopStatus()
+                val espRes = try {
+                    api().espCaptureLoopStatus()
+                } catch (_: Exception) {
+                    null
+                }
+                state = state.copy(
+                    autoCaptureRpiRunning = rpiRes.running,
+                    autoCaptureRpiIntervalSeconds = rpiRes.interval_seconds,
+                    autoCaptureRpiStartedAtTs = if (rpiRes.running) rpiRes.started_at_ts else null,
+                    autoCaptureEspRunning = espRes?.running,
+                    autoCaptureEspIntervalSeconds = espRes?.interval_seconds,
+                    autoCaptureEspStartedAtTs = if (espRes?.running == true) espRes.started_at_ts else null
+                )
+
+                val stopWasExpected = (System.currentTimeMillis() - lastAutoStopRequestedAtMs) < 20_000
+                if (!stopWasExpected) {
+                    val rpiUnexpectedStop = (lastAutoRpiRunning == true && !rpiRes.running)
+                    val espUnexpectedStop = (lastAutoEspRunning == true && espRes?.running == false)
+                    if (rpiUnexpectedStop || espUnexpectedStop) {
+                        val msg = buildString {
+                            append("Auto loop changed unexpectedly:")
+                            if (rpiUnexpectedStop) append(" RPi stopped")
+                            if (espUnexpectedStop) append(" ESP stopped")
+                        }
+                        state = state.copy(log = msg)
+                    }
+                }
+                lastAutoRpiRunning = rpiRes.running
+                lastAutoEspRunning = espRes?.running
+            } catch (_: Exception) {
+                // Best-effort silent refresh.
+            } finally {
+                onState(state)
+            }
+        }
+    }
+
     fun setAutoCaptureInterval(intervalSeconds: Int) {
         val allowed = setOf(60, 120, 180, 300, 600)
         if (intervalSeconds !in allowed) return
@@ -471,24 +543,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val debugCmd = buildEspProxyDebugCommand(rpiBase, espBase)
         Log.i(logTag, "OneShot ESP request: $debugCmd")
-        val (jpegBytes, err) = withContext(Dispatchers.IO) {
+        val espResult = withContext(Dispatchers.IO) {
             captureEspJpegViaRpiWithError(rpiBase, espBase)
         }
-        state = if (jpegBytes != null) {
-            Log.i(logTag, "OneShot ESP success bytes=${jpegBytes.size}")
+        state = if (espResult.jpegBytes != null) {
+            Log.i(logTag, "OneShot ESP success bytes=${espResult.jpegBytes.size}")
             val imagesRes = api().images(page = 1, pageSize = state.imagesPageSize)
-            val latest = imagesRes.items.firstOrNull()?.filename
+            val latest = espResult.savedFilename ?: imagesRes.items.firstOrNull()?.filename
+            val capturedItem = imagesRes.items.firstOrNull { it.filename == latest } ?: imagesRes.items.firstOrNull()
             applyImagesResponse(imagesRes, latest)
-            val dimText = decodeImageDimensions(jpegBytes)?.let { " ${it.first}x${it.second}" } ?: ""
-            val lowQxga = decodeImageDimensions(jpegBytes)?.let { it.first < 2048 || it.second < 1536 } ?: false
+            val dimText = decodeImageDimensions(espResult.jpegBytes)?.let { " ${it.first}x${it.second}" } ?: ""
+            val lowQxga = decodeImageDimensions(espResult.jpegBytes)?.let { it.first < 2048 || it.second < 1536 } ?: false
             state.copy(
                 selectedEspBaseUrl = espBase,
                 viewerImageUrl = null,
-                viewerImageBytes = jpegBytes,
+                viewerImageBytes = espResult.jpegBytes,
                 viewerTitle = "ESP capture",
                 log = "ESP capture: success ${latest ?: ""}$dimText${if (lowQxga) " [WARN below QXGA]" else ""} (via ${rpiBase.removePrefix("http://")}, esp ${espBase.removePrefix("http://")})".trim()
             )
         } else {
+            val err = espResult.error
             Log.e(logTag, "OneShot ESP failed err=${err ?: "unknown"} cmd=$debugCmd")
             state.copy(
                 log = if (err.isNullOrBlank()) {
@@ -827,7 +901,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun captureEspJpegViaRpiWithError(rpiBaseRaw: String, espBase: String): Pair<ByteArray?, String?> {
+    private fun captureEspJpegViaRpiWithError(rpiBaseRaw: String, espBase: String): EspProxyCaptureResult {
         return try {
             val rpiBase = normalizeBase(rpiBaseRaw, withPort5000 = true)
             val enc = URLEncoder.encode(espBase, Charsets.UTF_8.name())
@@ -841,22 +915,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (code !in 200..299) {
                 val errBody = conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(160)
                 Log.e(logTag, "Proxy HTTP error code=$code body=${errBody ?: ""}")
-                return Pair(null, "HTTP $code ${errBody ?: ""}".trim())
+                return EspProxyCaptureResult(jpegBytes = null, error = "HTTP $code ${errBody ?: ""}".trim())
             }
 
+            val savedFilename = conn.getHeaderField("X-AgriApp-Filename")
+            val latitude = conn.getHeaderField("X-AgriApp-Latitude")?.toDoubleOrNull()
+            val longitude = conn.getHeaderField("X-AgriApp-Longitude")?.toDoubleOrNull()
+            val temperature = conn.getHeaderField("X-AgriApp-Temperature")?.toDoubleOrNull()
+            val humidity = conn.getHeaderField("X-AgriApp-Humidity")?.toDoubleOrNull()
+            val pressure = conn.getHeaderField("X-AgriApp-Pressure")?.toDoubleOrNull()
             val bytes = conn.inputStream.use { it.readBytes() }
             val isJpeg = bytes.size > 4 &&
                 bytes[0] == 0xFF.toByte() &&
                 bytes[1] == 0xD8.toByte() &&
                 bytes[bytes.size - 2] == 0xFF.toByte() &&
                 bytes[bytes.size - 1] == 0xD9.toByte()
-            if (isJpeg) Pair(bytes, null) else {
+            if (isJpeg) EspProxyCaptureResult(
+                jpegBytes = bytes,
+                error = null,
+                savedFilename = savedFilename,
+                latitude = latitude,
+                longitude = longitude,
+                temperature = temperature,
+                humidity = humidity,
+                pressure = pressure,
+            ) else {
                 Log.e(logTag, "Proxy returned non-JPEG payload size=${bytes.size}")
-                Pair(null, "invalid jpeg")
+                EspProxyCaptureResult(jpegBytes = null, error = "invalid jpeg")
             }
         } catch (e: Exception) {
             Log.e(logTag, "Proxy network exception", e)
-            Pair(null, e.message ?: "network error")
+            EspProxyCaptureResult(jpegBytes = null, error = e.message ?: "network error")
         }
     }
 
