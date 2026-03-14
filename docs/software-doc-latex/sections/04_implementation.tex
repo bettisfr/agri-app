@@ -1,74 +1,71 @@
 \section{Implementation}
 
 \subsection{Project Structure}
-To make implementation details easier to navigate, the repository follows a modular folder organization.  
-The following tree reports the main directories and files relevant to software development and operations:
+AgriApp is organized as a mono-repository where backend, web UI, Android control app, firmware helpers, and operational scripts evolve together. This structure is intentional: the project is deployed as a single edge software stack, and versioning the full stack in one place reduces integration drift.
 
 \begin{verbatim}
 agri-app/
-|-- backend/                  # Capture and backend-side Python modules
-|-- docs/                     # Technical documentation
-|   `-- software-doc-latex/   # This LaTeX report
+|-- backend/                  # Python backend helpers (capture/sensors)
+|-- docs/
+|   `-- software-doc-latex/   # Technical documentation (this report)
 |-- firmware/
-|   `-- esp32-cam/            # ESP32-CAM firmware and helper scripts
+|   `-- esp32-cam/            # ESP32-CAM firmware + utilities
 |-- mobile/
-|   `-- android/              # Android tablet application (Kotlin/Compose)
-|-- old/                      # Deprecated/archived scripts
-|-- scripts/                  # Runtime and deployment helper scripts
-|-- static/                   # Web assets (CSS/JS, uploads)
-|-- test/                     # Hardware validation scripts (GPS, BME280)
-|-- systemd/                  # User service unit templates
+|   `-- android/              # Android tablet app (Kotlin + Compose)
+|-- old/                      # Deprecated scripts kept for reference
+|-- scripts/                  # Runtime/deploy helper scripts
+|   |-- capture_rpi.sh
+|   |-- capture_esp.py
+|   |-- capture_pair.sh
+|   |-- esp_capture.sh
+|   |-- rpi_network_mode.sh
+|   |-- run_server.sh
+|   `-- install_systemd_user_services.sh
+|-- static/
+|   |-- css/                  # Web styles
+|   |-- js/                   # Web logic
+|   `-- uploads/              # images/ labels/ jsons/ metadata/ thumbs/
+|-- systemd/                  # user service templates
 |-- templates/                # Flask HTML templates
-|-- client.py                 # Raspberry capture client entry point
-|-- server.py                 # Flask backend entry point
-|-- deploy_rpi.sh             # Sync/mount/reload deployment workflow
-|-- README.md                 # Main project overview
-`-- TODO.md                   # Active roadmap and task list
+|-- test/                     # Hardware validation scripts (GPS/BME280)
+|-- client.py                 # Raspberry Pi camera capture client
+|-- server.py                 # Flask backend + API orchestration
+|-- deploy_rpi.sh             # Sync/mount/reload/android/esp helper
+`-- README.md
 \end{verbatim}
 
-This structure reflects the project's edge-first design: backend logic, web interface, mobile control application, and deployment utilities are co-located and versioned together.
+\subsection{Backend Implementation}
+The backend is implemented in Python/Flask and runs on Raspberry Pi as the authoritative runtime node. The implementation is API-centric: business logic for capture, gallery lifecycle, annotations, network mode switching, and system operations is concentrated server-side, while clients (web/tablet) remain thin.
 
-\subsection{Backend}
-The backend is implemented in Python using Flask as the application framework. The implementation follows a service-oriented structure in which routing, file lifecycle management, capture orchestration, and control operations are centralized in a single execution node on Raspberry Pi. This choice favors deployment simplicity and operational transparency in edge scenarios.
+In concrete terms, \texttt{server.py} currently implements five operational domains. The first is acquisition orchestration: one-shot capture from Raspberry Pi camera through \texttt{scripts/capture\_rpi.sh}, and ESP proxy capture through \texttt{scripts/capture\_esp.py}. The second is gallery lifecycle management: paginated listing, per-image status, thumbnail generation/caching, single delete, and delete-all operations. The third is labeling persistence and conversion to dual artifacts (JSON + YOLO TXT). The fourth is device control and connectivity (restart/reboot/poweroff, Wi-Fi/AP mode switching). The fifth is unattended acquisition control through start/stop/status APIs for the capture loop.
 
-The API layer is progressively consolidated under the versioned namespace \texttt{/api/v1}. Versioning is treated as a contract boundary: clients are expected to integrate against stable endpoint semantics, while any short-lived compatibility aliases (when present) are retained only for controlled migration windows. This approach allows iterative evolution without abrupt client breakage.
+A notable implementation choice is best-effort metadata enrichment. After each successful capture, the backend attempts to enrich the image with GPS and BME280 values and writes a sidecar JSON. Capture completion is never blocked by missing sensors: if sensors are unavailable, the image remains valid and metadata fields are populated as \texttt{null}.
 
-From an implementation standpoint, the backend handles four major responsibilities. First, it coordinates image acquisition operations, both local camera one-shot and ESP proxy-based capture. Second, it provides paginated gallery access and status inspection endpoints, designed to keep payloads bounded under large datasets. Third, it manages annotation persistence and conversion between JSON state and YOLO TXT exports. Fourth, it exposes system-level operations such as server restart, reboot, and poweroff through explicit HTTP actions.
+\subsection{Web Frontend Implementation}
+The web frontend is implemented with Flask templates plus static CSS/JavaScript modules. Its architecture separates gallery concerns from labeling concerns, reducing coupling and allowing iterative UI work without destabilizing annotation behavior.
 
-The capture pipeline now includes contextual sensor enrichment. During one-shot acquisition, the backend applies best-effort sampling of GPS and BME280 and stores available values in per-image sidecar metadata files. This design avoids coupling capture success to sensor availability: image acquisition remains successful even when one or more sensors are temporarily unavailable.
+The gallery view is driven by server-side pagination and lightweight thumbnails. This is critical for large datasets: the list/grid view uses cached reduced images, while full-resolution images are loaded only in detail workflows. Mutation operations (save labels, delete image, delete-all) are followed by explicit API synchronization instead of optimistic local state assumptions.
 
-The backend intentionally avoids opaque persistence layers for core artifacts. Image and annotation data are stored in a deterministic filesystem hierarchy, making debugging, backup, and audit operations straightforward for maintainers.
+The labeler view is implemented as an interaction-focused editor for bounding boxes and class assignment. Persistence is dual-output by design: JSON preserves full UI state, while TXT keeps compatibility with YOLO pipelines.
 
-\subsection{Web Frontend}
-The web frontend is implemented as a lightweight static interface composed of HTML templates, CSS stylesheets, and modular JavaScript files. The architectural decision here is to keep the browser client thin and delegate authoritative state management to backend endpoints.
+\subsection{Android App Implementation}
+The Android application is written in Kotlin with Jetpack Compose and Retrofit. The UI is state-driven through a central view-model that coordinates discovery, control actions, gallery pagination, and logs.
 
-Implementation is split into two main JavaScript modules. The gallery module handles pagination, filtering, modal navigation, dataset downloads, item-level actions, and thumbnail-based rendering. The labeler module handles bounding-box interaction, class assignment, TP/FP status, and annotation save/load workflows. This separation is not purely organizational; it prevents cross-feature coupling and makes incremental refactoring feasible.
+The app currently exposes two major control planes. The first is connectivity and device operation: discovery, Wi-Fi/AP switching, capture start/stop, one-shot dialog (RPi or ESP), and system actions (restart/reboot/poweroff). The second is gallery consumption: paginated list with thumbnails, image open in full-screen dialog, zoom/pan gestures, and previous/next swipe navigation.
 
-UI behavior is aligned with backend state through explicit API calls rather than hidden shared state. After critical operations such as save or delete, the frontend re-queries server data to avoid stale local assumptions. This pattern improves correctness under concurrent use and across network mode transitions.
+A practical implementation detail is cache-first discovery. Last known hosts are persisted locally and probed before subnet scanning. This reduces connection latency in repeated sessions and limits unnecessary probing.
 
-\subsection{Android App}
-The Android tablet client is implemented in Kotlin with Jetpack Compose for UI and Retrofit for HTTP integration. The app follows a state-driven model where UI is derived from a central view-model state and updated through asynchronous API operations.
-
-A key implementation goal for the tablet client is operational clarity in field use. For this reason, the interface is organized around three practical areas: connection management and discovery, capture and system actions, and gallery inspection. Destructive operations are guarded by explicit confirmation dialogs, while device control actions are grouped in a dedicated ``System'' dialog to avoid accidental activation during routine browsing.
-
-Discovery logic is implemented with a cache-first strategy. Recently valid hosts are persisted locally and tested before deeper subnet scans. The implementation also adapts behavior to network context, for example skipping ESP discovery in standard Wi-Fi scenarios where it is not expected.
-
-The Android app reuses backend pagination and status semantics rather than reproducing custom data logic. This design keeps behavior aligned with web workflows and reduces divergence risk over time. Recent UI refinements include pull-down refresh on gallery list top, list thumbnails fetched from lightweight thumbnail endpoints, and swipe-based previous/next navigation in image viewer mode.
-
-\subsection{Storage Layout}
-The storage layout is file-based and intentionally explicit. Image binaries are stored under \texttt{static/uploads/images}, YOLO label exports under \texttt{static/uploads/labels}, full annotation state under \texttt{static/uploads/jsons}, contextual sidecar metadata under \texttt{static/uploads/metadata}, and cached thumbnails under \texttt{static/uploads/thumbs}. This structure directly mirrors the operational workflow: acquisition, context capture, review/annotation, and training-oriented export.
-
-File naming conventions encode capture origin where relevant (e.g., Raspberry Pi vs ESP), improving traceability during mixed-source campaigns. During deletion operations, the implementation enforces coordinated cleanup across image, label, and JSON artifacts to reduce orphaned files.
-
-This storage strategy is deliberately simple. While database-backed approaches can offer richer indexing, the chosen model provides strong practical advantages for edge deployments: low dependency footprint, easy manual inspection, and trivial off-device backup through standard filesystem tools.
-
-\subsection{Implementation Trade-offs}
-The current implementation prioritizes reliability and maintainability over maximal abstraction. Several trade-offs are explicit:
-
+\subsection{Storage Implementation}
+Persistence is filesystem-based and explicit:
 \begin{itemize}
-  \item \textbf{Single-node service concentration}: backend and capture logic on Raspberry Pi reduce deployment complexity but increase local responsibility.
-  \item \textbf{Filesystem persistence}: easier operations and debugging, with reduced indexing capabilities compared to database systems.
-  \item \textbf{API-centric consistency}: stronger cross-client coherence at the cost of stricter contract discipline.
+  \item \texttt{static/uploads/images}: original captured images,
+  \item \texttt{static/uploads/labels}: YOLO TXT labels,
+  \item \texttt{static/uploads/jsons}: full annotation state,
+  \item \texttt{static/uploads/metadata}: per-image environmental/geospatial metadata,
+  \item \texttt{static/uploads/thumbs}: cached generated thumbnails.
 \end{itemize}
 
-These trade-offs are considered acceptable for the present project phase, where field robustness and reproducible workflows are primary goals.
+The implementation enforces lifecycle consistency: delete endpoints remove associated label/json/metadata artifacts and thumbnail cache entries. Capture naming also encodes source semantics (e.g., \texttt{rpi\_...} and \texttt{esp\_...}) to simplify mixed-source campaigns.
+
+\subsection{Implementation Trade-offs}
+The software intentionally favors operational clarity over abstraction depth. A single backend process on Raspberry Pi simplifies deployment and observability, at the cost of centralizing responsibility on the edge node. Filesystem persistence eases backup and manual inspection, at the cost of weaker ad-hoc indexing compared to database-backed designs. These trade-offs are acceptable for the current project phase, where field robustness and rapid iteration are the primary objectives.

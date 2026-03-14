@@ -1,76 +1,72 @@
 \section{Deployment}
 
-\subsection{Deployment Strategy}
-Deployment in AgriApp Control is designed as an operational workflow rather than a one-time installation step. The core principle is reproducibility: the same sequence used during development should remain valid in field transitions, with minimal manual intervention. For this reason, synchronization, service reload, and runtime checks are integrated into script-driven procedures.
+\subsection{Deployment Model}
+AgriApp deployment is structured as a repeatable operations workflow, not a one-time installation. The Raspberry Pi is the edge runtime target and hosts backend APIs, camera orchestration, and local data storage. Development happens on a workstation, then changes are synchronized incrementally to the device.
 
-The deployment target is the Raspberry Pi edge node, which hosts both capture logic and backend APIs. Client applications (web and Android tablet) are deployed independently but validated against the same backend contract. This separation enables rapid UI iterations while preserving server-side stability.
+This model is intentionally lightweight: rapid iteration is required for hardware/software co-tuning, and full image reflashing would be too costly for daily work.
 
-\subsection{Raspberry Pi Deployment Pipeline}
-The Raspberry Pi pipeline is based on incremental synchronization from the development machine to the remote edge directory. This approach avoids full image reflashing for routine updates and supports fast correction cycles after backend or static-asset modifications.
+\subsection{Primary Tooling: \texttt{deploy\_rpi.sh}}
+The project standardizes deployment operations through \texttt{deploy\_rpi.sh}. In current practice, this script is used for four classes of tasks:
+\begin{itemize}
+  \item synchronization and remote access (\texttt{--sync}, \texttt{--mount}, \texttt{--ssh}),
+  \item backend runtime reload (\texttt{--reload-server}),
+  \item ESP build/flash support (\texttt{--esp-build}, \texttt{--esp-flash}),
+  \item Android build/install/run pipeline (\texttt{--android-build}, \texttt{--android-install}, \texttt{--android-run}, \texttt{--android-cir}).
+\end{itemize}
 
-After synchronization, the backend service is reloaded through user-level \texttt{systemd} control. Service lifecycle visibility is therefore explicit: maintainers can inspect active status, restart behavior, and startup integration with standard tools. From a reliability perspective, this is preferable to manually launched background processes, which are less observable and harder to recover after reboot.
+This unifies day-to-day engineering actions behind one operator-facing entry point.
 
-The deployment pipeline typically includes:
+\subsection{Raspberry Pi Service Deployment}
+Backend serving is managed as a user-level systemd service (\texttt{agriapp-server.service}). Installation is performed by \texttt{scripts/install\_systemd\_user\_services.sh}, and lifecycle is controlled through \texttt{systemctl --user}.
+
+Using systemd for the server gives deterministic startup behavior after reboot and clear operational observability (status and logs). It also allows remote restart through dedicated API/system actions.
+
+\subsection{Capture Runtime Deployment}
+Current deployment practice separates backend service supervision from capture scheduling logic:
+\begin{itemize}
+  \item server process: supervised by systemd,
+  \item unattended capture loop: controlled dynamically via API endpoints (start/stop/status).
+\end{itemize}
+
+This split was chosen to provide direct operational control from tablet/web interfaces without editing cron/systemd timers during field sessions.
+
+\subsection{Environment and Dependencies}
+Runtime wrappers (notably \texttt{run\_server.sh} and capture wrappers) support pyenv/venv-based Python environment loading. The deployment checklist must ensure that required packages are present on the Raspberry Pi, including image handling and optional sensor libraries.
+
+For sensor-enabled metadata enrichment, deployment validation should include:
+\begin{itemize}
+  \item GPS visibility on serial path,
+  \item BME280 visibility on I2C bus,
+  \item successful metadata sidecar generation after one-shot capture.
+\end{itemize}
+
+\subsection{BME280 Wiring Reference}
+In I2C mode, the minimal wiring uses four lines:
+\begin{itemize}
+  \item \textbf{VCC} $\rightarrow$ \textbf{RPi 3.3V} (pin 1),
+  \item \textbf{GND} $\rightarrow$ \textbf{RPi GND} (pin 6),
+  \item \textbf{SDA} $\rightarrow$ \textbf{GPIO2 / SDA1} (pin 3),
+  \item \textbf{SCL} $\rightarrow$ \textbf{GPIO3 / SCL1} (pin 5).
+\end{itemize}
+
+On six-pin boards, \texttt{CSB} and \texttt{SDO/SDD} are optional for basic I2C operation and can be used only when address forcing is needed.
+
+\subsection{Android Deployment Cycle}
+Android deployment is integrated into the same repository workflow. The standard cycle is build-install-run on USB-debug device via \texttt{--android-cir}. Validation after install must include discovery, one-shot capture actions, gallery pagination, and system/network controls.
+
+\subsection{Network Portability}
+The edge node is expected to move across multiple Wi-Fi environments (e.g., home and field networks). Deployment therefore includes maintaining multiple known SSIDs with proper priority, plus AP rescue fallback for infrastructure outages.
+
+Operationally, AP mode is not a special-case debug path: it is part of the primary resilience strategy and should be tested regularly.
+
+\subsection{Recommended Deployment Runbook}
+A practical release cycle is:
 \begin{enumerate}
-  \item code synchronization to Raspberry Pi;
-  \item backend service reload/restart;
-  \item health/API sanity checks;
-  \item optional functional checks (capture, gallery, control actions).
+  \item local validation (backend syntax, Android build, LaTeX if docs changed),
+  \item \texttt{deploy\_rpi.sh --sync},
+  \item \texttt{deploy\_rpi.sh --reload-server},
+  \item API smoke checks (health, status, gallery, one-shot),
+  \item optional tablet functional checks.
 \end{enumerate}
 
-This sequence is intentionally lightweight so that it can be executed frequently, including before on-site relocation.
-
-\subsection{Service Initialization and Runtime}
-In production-like operation, backend startup is handled by \texttt{systemd} user services. This ensures that service behavior is deterministic across reboots and that recovery actions (restart/reboot/poweroff) remain coherent with the process supervision model.
-
-Capture execution can be triggered in two ways: immediate one-shot actions and unattended periodic workflows. The deployment model must preserve both, because they serve different operational objectives. One-shot capture supports validation and debugging, while periodic capture supports long-term dataset accumulation.
-
-From an implementation standpoint, environment configuration (e.g., virtual environment paths, capture interval, and network mode dependencies) should be treated as deployment-time parameters, not hardcoded assumptions.
-
-Sensor-aware deployment also requires dependency readiness. In practice, Python runtime must include GPS and BME-related packages (\texttt{pyserial}, \texttt{adafruit-circuitpython-bme280}) and image-processing dependency (\texttt{Pillow}) for server-side thumbnail generation. Hardware checks (e.g., \texttt{i2cdetect -y 1} for BME280 and serial visibility for GPS) are part of deployment validation, not optional post-fixes.
-
-\subsection{BME280 Physical Wiring (Raspberry Pi)}
-For stable operation in I2C mode, only four signal lines are required between BME280 and Raspberry Pi:
-\begin{itemize}
-  \item \textbf{BME280 VCC} $\rightarrow$ \textbf{RPi 3.3V} (physical pin 1),
-  \item \textbf{BME280 GND} $\rightarrow$ \textbf{RPi GND} (physical pin 6),
-  \item \textbf{BME280 SDA} $\rightarrow$ \textbf{RPi SDA1 / GPIO2} (physical pin 3),
-  \item \textbf{BME280 SCL} $\rightarrow$ \textbf{RPi SCL1 / GPIO3} (physical pin 5).
-\end{itemize}
-
-On 6-pin boards (\texttt{VCC, GND, SCL, SDA, CSB, SDO/SDD}), \texttt{CSB} and \texttt{SDO/SDD} are not used in the minimal I2C wiring path. If address forcing is needed, use:
-\begin{itemize}
-  \item \texttt{CSB} high for I2C mode,
-  \item \texttt{SDO} low for address \texttt{0x76}, high for \texttt{0x77}.
-\end{itemize}
-
-After wiring, validate bus visibility with \texttt{i2cdetect -y 1} and confirm that the sensor appears at the expected address before running end-to-end capture tests.
-
-\subsection{Android Client Deployment}
-The Android tablet application is deployed as an APK built with Gradle and installed via ADB during development and validation phases. What matters operationally is not only installation success but integration success: after install, the app must correctly discover the edge node, retrieve status data, browse gallery pages, and execute capture/control actions.
-
-Because the tablet is used as a field control interface, deployment validation always includes network-context checks. In practice, the app should remain functional both in infrastructure Wi-Fi mode and in AP rescue mode, with discovery logic adapting to the active subnet and cached known hosts.
-
-\subsection{Network Portability and Multi-Site Operation}
-Field deployment often requires moving the same Raspberry Pi between different locations (for example, home, office, and rural test site). The deployment strategy therefore includes explicit multi-profile Wi-Fi configuration with autoconnect priorities. This allows the node to reconnect automatically to known networks without manual reconfiguration at every relocation.
-
-When no known infrastructure network is available, AP rescue mode provides continuity. In this mode, Raspberry Pi acts as a local access point and remains manageable through the same application interfaces. Architecturally, this fallback is not secondary; it is part of the primary deployment design.
-
-\subsection{Pre-Deployment Checklist}
-Before relocating the node to a field site, the following checks should be completed:
-\begin{itemize}
-  \item backend service is active and healthy;
-  \item one-shot capture produces expected image artifacts;
-  \item contextual metadata (GPS and/or BME280) is persisted when available;
-  \item thumbnail endpoint responds for recent images;
-  \item gallery listing and pagination are responsive;
-  \item tablet app can perform discovery and control actions;
-  \item target Wi-Fi profiles and priorities are correctly configured.
-\end{itemize}
-
-Executing this checklist reduces the probability of on-site failures that are costly to debug remotely.
-
-\subsection{Post-Deployment Validation}
-After physical installation, validation focuses on runtime continuity under actual environmental conditions. Connectivity, capture, API responsiveness, and control operations should be verified as an integrated workflow. Particular attention should be paid to recovery actions, because robust restart and fallback behavior are often more important than peak throughput in edge deployments.
-
-In summary, deployment quality in AgriApp Control is defined by operational reliability over time, not by installation completion alone.
+This sequence has proven robust in both office and field transitions.

@@ -130,10 +130,11 @@ class MainActivity : ComponentActivity() {
                         vm.loadNetworkMode { ui = it }
                     }
                 }
-                LaunchedEffect(ui.autoCaptureRunning) {
-                    while (ui.autoCaptureRunning == true) {
+                LaunchedEffect(ui.autoCaptureRpiRunning, ui.autoCaptureEspRunning) {
+                    while (ui.autoCaptureRpiRunning == true || ui.autoCaptureEspRunning == true) {
                         delay(12_000)
                         vm.refreshGallerySilently { ui = it }
+                        vm.loadAutoCaptureStatus { ui = it }
                     }
                 }
 
@@ -292,7 +293,7 @@ class MainActivity : ComponentActivity() {
                                             Text("Start Auto")
                                         }
                                         FilledTonalButton(
-                                            onClick = { vm.stopAutoCapture { ui = it } },
+                                            onClick = { vm.stopAutoCapture({ ui = it }, ui.selectedAutoCaptureSource) },
                                             enabled = !ui.busy,
                                             shape = compactShape,
                                             contentPadding = compactBtnPadding
@@ -313,17 +314,19 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = compactShape,
                                         colors = CardDefaults.cardColors(
-                                            containerColor = if (ui.autoCaptureRunning == true) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+                                            containerColor = if (ui.autoCaptureRpiRunning == true || ui.autoCaptureEspRunning == true) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
                                         )
                                     ) {
-                                        val statusText = when (ui.autoCaptureRunning) {
-                                            true -> "running"
-                                            false -> "stopped"
-                                            null -> "unknown"
-                                        }
-                                        val suffix = ui.autoCaptureIntervalSeconds?.let { " (${it}s)" } ?: ""
                                         Text(
-                                            text = "Auto capture: $statusText$suffix",
+                                            text = "Auto RPi: ${
+                                                if (ui.autoCaptureRpiRunning == true) {
+                                                    "running${ui.autoCaptureRpiIntervalSeconds?.let { " (${it}s)" } ?: ""}"
+                                                } else "stopped"
+                                            } | Auto ESP: ${
+                                                if (ui.autoCaptureEspRunning == true) {
+                                                    "running${ui.autoCaptureEspIntervalSeconds?.let { " (${it}s)" } ?: ""}"
+                                                } else "stopped"
+                                            }",
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                             fontWeight = FontWeight.SemiBold
                                         )
@@ -408,14 +411,12 @@ class MainActivity : ComponentActivity() {
                         canNext = canNext,
                         onPrev = {
                             if (!canPrev) return@ZoomableImageDialog
-                            val prev = ui.images[currentIndex - 1].filename
-                            vm.selectRpiImage(prev)
+                            vm.openAdjacentImage(-1)
                             ui = vm.state
                         },
                         onNext = {
                             if (!canNext) return@ZoomableImageDialog
-                            val next = ui.images[currentIndex + 1].filename
-                            vm.selectRpiImage(next)
+                            vm.openAdjacentImage(1)
                             ui = vm.state
                         },
                         onDismiss = {
@@ -450,10 +451,12 @@ class MainActivity : ComponentActivity() {
                 if (showAutoStartDialog) {
                     StartAutoDialog(
                         busy = ui.busy,
+                        initialSource = ui.selectedAutoCaptureSource,
                         initialIntervalSeconds = ui.selectedAutoCaptureIntervalSeconds,
-                        onStart = { selected ->
+                        onStart = { source, selected ->
+                            vm.setAutoCaptureSource(source)
                             vm.setAutoCaptureInterval(selected)
-                            vm.startAutoCapture({ ui = it }, intervalSeconds = selected)
+                            vm.startAutoCapture({ ui = it }, source = source, intervalSeconds = selected)
                             showAutoStartDialog = false
                         },
                         onDismiss = { showAutoStartDialog = false }
@@ -537,10 +540,20 @@ private fun ShotDialog(
 @androidx.compose.runtime.Composable
 private fun StartAutoDialog(
     busy: Boolean,
+    initialSource: String,
     initialIntervalSeconds: Int,
-    onStart: (Int) -> Unit,
+    onStart: (String, Int) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var source by remember {
+        mutableStateOf(
+            when (initialSource) {
+                "esp" -> "esp"
+                "both" -> "both"
+                else -> "rpi"
+            }
+        )
+    }
     var selected by remember { mutableStateOf(initialIntervalSeconds) }
     val options = listOf(60, 120, 180, 300, 600)
 
@@ -554,7 +567,21 @@ private fun StartAutoDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Start auto capture", fontWeight = FontWeight.SemiBold)
-                Text("Choose interval")
+                Text("Choose source and interval")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AssistChip(
+                        onClick = { source = "rpi" },
+                        label = { Text(if (source == "rpi") "• RPi" else "RPi") }
+                    )
+                    AssistChip(
+                        onClick = { source = "esp" },
+                        label = { Text(if (source == "esp") "• ESP" else "ESP") }
+                    )
+                    AssistChip(
+                        onClick = { source = "both" },
+                        label = { Text(if (source == "both") "• Both" else "Both") }
+                    )
+                }
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -576,7 +603,7 @@ private fun StartAutoDialog(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ElevatedButton(onClick = { onStart(selected) }, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("Start") }
+                    ElevatedButton(onClick = { onStart(source, selected) }, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("Start") }
                     FilledTonalButton(onClick = onDismiss, enabled = !busy, shape = RoundedCornerShape(6.dp)) { Text("Cancel") }
                 }
             }
@@ -866,6 +893,7 @@ private fun ImageList(
                             contentDescription = item.filename,
                             modifier = Modifier
                                 .size(68.dp)
+                                .clickable { onImageClick(item.filename) }
                                 .clipToBounds(),
                             contentScale = ContentScale.Crop
                         )

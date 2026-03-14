@@ -5,7 +5,7 @@ Questa cartella contiene la documentazione tecnica completa del progetto in LaTe
 ## Struttura
 
 - `main.tex`: file principale.
-- `chapters/`: capitoli separati per area.
+- `sections/`: sezioni separate per area (incluse da `main.tex`).
 - `references.bib`: bibliografia.
 
 ## Compilazione
@@ -14,16 +14,15 @@ Dalla root del repository:
 
 ```bash
 cd docs/software-doc-latex
-pdflatex main.tex
-pdflatex main.tex
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
 ```
 
 Se usi citazioni BibTeX:
 
 ```bash
-pdflatex main.tex
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
 bibtex main
-pdflatex main.tex
-pdflatex main.tex
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
 ```
-

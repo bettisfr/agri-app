@@ -1,75 +1,71 @@
 \section{Operations and Maintenance}
 
-\subsection{Operational Perspective}
-For AgriApp Control, operations are not a secondary concern after development; they are an integral part of system quality. The platform is expected to run in edge conditions where direct intervention can be costly, delayed, or physically inconvenient. Therefore, routine maintenance must be explicit, lightweight, and reproducible.
+\subsection{Operational Objectives}
+Operations in AgriApp focus on keeping an edge node usable over long sessions with minimal friction. The practical objectives are straightforward: keep the service reachable, keep capture reliable, preserve storage headroom, and maintain recoverability when network conditions change.
 
-Operational design in this project follows three principles: observability, controllability, and recoverability. Observability means that maintainers can understand system state through APIs and logs. Controllability means that high-value actions (restart, reboot, network mode changes) are available through safe interfaces. Recoverability means that failures should be diagnosable and correctable with bounded effort.
+The platform is therefore operated as a control loop rather than a static deployment: observe status, execute actions, verify outcomes, and log relevant context.
 
-\subsection{Routine Operation Model}
-Daily operation is centered on a small set of repeated workflows: checking service health, monitoring storage usage, triggering capture actions, reviewing gallery state, and applying occasional maintenance actions. These workflows are intentionally kept consistent between shell procedures and tablet/web interfaces.
-
-In practical terms, routine operation includes:
-\begin{itemize}
-  \item verifying that backend service is active;
-  \item verifying that capture produces valid artifacts;
-  \item verifying contextual metadata updates (GPS/BME280) on new captures;
-  \item verifying thumbnail responsiveness for gallery list/grid rendering;
-  \item verifying gallery responsiveness and labeling availability;
-  \item monitoring free disk space and dataset growth trends.
-\end{itemize}
-
-By keeping these checks regular and simple, the system remains stable without requiring deep troubleshooting sessions.
-
-\subsection{Service Maintenance}
-Service maintenance is built around user-level \texttt{systemd} control on Raspberry Pi. This enables explicit status inspection and deterministic restart behavior across reboots. The same lifecycle concepts are reflected in API and client operations, so maintainers can perform actions from the interface when shell access is inconvenient.
-
-A robust maintenance posture includes periodic verification that:
-\begin{itemize}
-  \item the service starts correctly after reboot;
-  \item restart operations are effective and observable;
-  \item health/status endpoints remain responsive.
-\end{itemize}
-
-When anomalies appear, service logs and endpoint diagnostics are the first line of investigation.
-
-\subsection{Storage and Dataset Hygiene}
-Because persistence is file-based, maintenance includes explicit dataset hygiene. Without periodic cleanup or export, edge storage can become a bottleneck. The platform therefore provides both single-image and bulk-delete paths, as well as dataset download operations for off-device archiving.
-
-Maintainers should define a simple retention policy (for example, based on age, campaign phase, or annotation completeness) and enforce it regularly. This avoids emergency cleanup under low-storage conditions and preserves predictable runtime behavior.
-
-Consistency between image files and annotation artifacts is another hygiene objective. Deletion workflows are designed to clean associated label, JSON, metadata, and thumbnail-cache artifacts, but periodic audits remain recommended in long-running deployments.
-
-\subsection{Network and Connectivity Maintenance}
-Network maintenance in AgriApp Control is inherently multi-context. The same node can move between infrastructure Wi-Fi and AP rescue operation. Maintaining both paths in a healthy state is essential, because AP mode is often the recovery channel when infrastructure mode fails.
-
-Operationally, this implies:
-\begin{itemize}
-  \item keeping known Wi-Fi profiles updated and prioritized;
-  \item periodically verifying AP availability and client reachability;
-  \item validating discovery behavior after network transitions.
-\end{itemize}
-
-Connectivity maintenance should be treated as preventive work, not as emergency reaction, especially before field relocation.
-
-\subsection{Incident Handling}
-Incident handling in edge systems should privilege fast triage over premature deep diagnosis. A practical triage sequence is:
+\subsection{Daily Runtime Workflow}
+A typical operating cycle includes:
 \begin{enumerate}
-  \item verify physical/device status and connectivity;
-  \item verify backend health and service state;
-  \item verify sensor paths (GPS serial visibility, BME280 I2C visibility) when metadata is missing;
-  \item verify capture/galleries endpoints;
-  \item inspect logs for most recent failing operation;
-  \item apply smallest safe recovery action (restart before reboot, reboot before power cycle).
+  \item verify backend health and storage,
+  \item run one-shot validation if needed,
+  \item start/stop unattended capture loop according to campaign plan,
+  \item monitor gallery growth and metadata quality,
+  \item apply cleanup/export actions before storage pressure builds up.
 \end{enumerate}
 
-This sequence minimizes unnecessary disruption and preserves diagnostic signal in logs.
+This workflow is available via shell, browser, and Android app, which reduces dependency on any single interaction channel.
 
-\subsection{Logging and Traceability}
-Traceability relies on combining multiple signal sources: backend logs, service manager status, API responses, and client-side action logs. No single source is sufficient in all failure scenarios. For this reason, maintenance procedures should always record the context of performed actions (network mode, active host, recent deployment changes) when reporting issues.
+\subsection{Service Operations}
+The backend server is managed by \texttt{systemctl --user}. In routine maintenance, the most relevant operations are status inspection, restart, and log tailing. API-level restart/reboot/poweroff actions provide remote control equivalents for field usage when shell access is inconvenient.
 
-A disciplined logging practice significantly reduces mean time to recovery, especially when issues are intermittent and tied to environmental conditions.
+Operational safety remains important: reboot and poweroff are destructive from an availability perspective and should be used with explicit user confirmation and contextual logging.
 
-\subsection{Evolutionary Maintenance}
-As the project evolves, maintenance effort should remain bounded by design. This requires continued alignment around \texttt{/api/v1}, reduction of legacy route dependencies, and regular pruning of unused operational paths. Maintenance is therefore not only reactive support but also structural simplification over time.
+\subsection{Capture Operations}
+Capture management now has two complementary modes:
+\begin{itemize}
+  \item one-shot capture for immediate validation (RPi or ESP source),
+  \item unattended loop capture controlled by \texttt{/api/v1/capture/loop/*}.
+\end{itemize}
 
-In summary, successful operations in AgriApp Control depend on maintaining a tight feedback loop between deployment, runtime checks, incident handling, and incremental refactoring. This loop is the practical mechanism that keeps an edge-first platform reliable in real usage conditions.
+For unattended operation, interval selection is an operational parameter (e.g., 1--10 minute presets in tablet UI or explicit API payloads). Start/stop semantics are explicit; operators should always verify loop status after transitions.
+
+\subsection{Metadata Operations (GPS/BME280)}
+Metadata is persisted opportunistically. Operations should treat missing sensor values as a diagnosable condition, not necessarily as a capture failure. If GPS or BME data disappears unexpectedly, the recommended sequence is:
+\begin{enumerate}
+  \item verify physical wiring/serial visibility,
+  \item run dedicated sensor test scripts,
+  \item run one-shot capture and inspect generated metadata sidecar,
+  \item only then escalate to service/device restart.
+\end{enumerate}
+
+This avoids unnecessary full restarts when the issue is local to one sensor path.
+
+\subsection{Storage Hygiene}
+Because persistence is file-based, dataset hygiene is an explicit operational task. The platform supports single delete, delete-all, and dataset export. Maintainers should define a cadence for cleanup or off-device archival to avoid emergency low-space events.
+
+Thumbnail cache is managed automatically by deletion endpoints, but periodic sanity checks remain useful in long-running campaigns.
+
+\subsection{Network Mode Operations}
+AgriApp is operated across heterogeneous network contexts. In infrastructure Wi-Fi mode, discovery should be fast and mostly cache-driven. In AP mode, local control continuity takes priority over throughput.
+
+Mode switching must be followed by a brief verification phase (reachability, status endpoint, shot action) before proceeding with high-value operations. This small discipline prevents silent mode drift during field sessions.
+
+\subsection{Incident Response}
+A practical incident playbook is:
+\begin{enumerate}
+  \item check physical power/connectivity,
+  \item check \texttt{/api/v1/health} and \texttt{/api/v1/system/status},
+  \item check capture path (RPi first, then ESP proxy),
+  \item check sensor visibility if metadata is missing,
+  \item restart service, then reboot only if necessary.
+\end{enumerate}
+
+This order minimizes downtime and preserves diagnostic signal.
+
+\subsection{Operational Logging}
+Effective troubleshooting depends on correlated logs. The project uses a combination of backend logs, systemd status/logs, and Android in-app logs. Operators should record at least three contextual tags when reporting incidents: active network mode, active host/IP, and last successful action.
+
+\subsection{Maintenance Outlook}
+Maintenance effort should continue reducing legacy complexity. The most valuable ongoing work is progressive legacy endpoint retirement, tighter contract tests on \texttt{/api/v1}, and continued UI/ops simplification so that field operation stays predictable even as features grow.

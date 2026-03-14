@@ -1,43 +1,49 @@
 \section{Software Modules}
 
-\subsection{Capture Module}
-The capture module is responsible for image acquisition on Raspberry Pi and represents the operational entry point of the whole data pipeline. Its implementation supports both manual one-shot execution and unattended periodic capture, allowing the system to operate in interactive and autonomous modes without architectural changes.
+\subsection{Capture Orchestration Module}
+This module governs all image acquisition paths and normalizes them into a single storage lifecycle. It includes Raspberry Pi one-shot and loop capture, plus ESP32-CAM proxy capture. The operational goal is not only ``take a picture'' but ``produce a valid artifact that enters the gallery pipeline consistently''.
 
-From a software perspective, this module encapsulates camera invocation parameters, runtime profile behavior, and output naming conventions. The naming strategy is not only cosmetic: it provides traceability and helps downstream modules distinguish capture origin and temporal order. The module is designed to work in coordination with service management logic, so scheduled or long-running capture can be activated without relying on manual shell interaction during routine operation.
+On Raspberry Pi, capture execution is delegated to \texttt{scripts/capture\_rpi.sh} and \texttt{client.py}, preserving camera tuning control while keeping API entry points clean. For ESP, the backend uses \texttt{scripts/capture\_esp.py} with controlled defaults (currently QXGA and high quality profile) and then stores the result locally with an \texttt{esp\_} filename prefix.
 
-An additional responsibility of this module is interoperability with optional external sources, such as ESP32-CAM streams accessed through backend proxy operations. Even in this mixed-source scenario, the capture module contributes to a unified lifecycle by maintaining coherent storage and retrieval behavior.
+The module also owns loop lifecycle semantics (start, stop, status). This keeps unattended acquisition under API control and decouples day-to-day operations from manual shell sessions.
 
-The same module also coordinates contextual acquisition by attaching best-effort GPS and BME280 readings to image metadata. This enables richer dataset semantics without making capture depend on mandatory sensor success.
+\subsection{Sensor Enrichment Module}
+This module performs best-effort contextual sampling and metadata persistence. It integrates GPS and BME280 readings, merges them into a normalized metadata object, and writes sidecar files in \texttt{static/uploads/metadata}.
 
-\subsection{Gallery Module}
-The gallery module provides the browsing and dataset management surface used by both web and tablet clients. Its core function is paginated retrieval of image entries enriched with operational metadata such as timestamp, file size, label status, annotation count, and contextual values (GPS/T/H/P). Pagination is implemented server-side and consumed uniformly by clients to maintain consistent behavior under large collections.
+A key property is tolerance to partial availability. If one sensor is unavailable, available values are still persisted and capture remains successful. This design keeps the dataset usable even under non-ideal field conditions and avoids hard dependencies that would reduce acquisition continuity.
 
-Beyond listing, the module handles item-level actions, including open, status refresh, single deletion, and bulk deletion workflows. It also integrates thumbnail-oriented rendering through lightweight server-side thumbnail endpoints to keep browsing responsive with large full-resolution datasets. These operations are implemented with explicit backend synchronization to avoid stale client-side assumptions. In practical terms, the module prioritizes coherence over optimistic local mutation, which is particularly important when multiple interfaces may act on the same dataset.
+\subsection{Gallery Lifecycle Module}
+The gallery module is responsible for listing, filtering, pagination, status inspection, open/delete operations, and dataset export orchestration. It is designed for scalability in practical terms: large galleries must remain usable without loading full-resolution assets in list views.
 
-The gallery module therefore acts as both visualization layer and control layer for image lifecycle management, bridging raw acquisition output and annotation workflows.
+For this reason, thumbnail serving is part of the module contract, not a cosmetic optimization. Thumbnails are cached server-side and invalidated on deletion, allowing responsive client navigation while preserving full-resolution originals for detailed inspection.
 
-\subsection{Labeling Module}
-The labeling module is responsible for annotation authoring and persistence. It supports bounding-box creation, selection, editing, class assignment, and TP/FP state management. The interaction model is designed to remain effective in browser environments even when users need repeated micro-edits on dense images.
+\subsection{Labeling and Annotation Module}
+The labeling module manages annotation state, editing semantics, and export compatibility. It supports box-level operations and class semantics while preserving dual persistence:
+\begin{itemize}
+  \item JSON as authoritative annotation state for UI reconstruction,
+  \item YOLO TXT as training-oriented export.
+\end{itemize}
 
-A key implementation property of this module is dual-format persistence. The JSON representation stores complete annotation state, enabling exact UI reconstruction and richer semantic status handling. In parallel, YOLO TXT export preserves compatibility with training pipelines and external tooling. The module ensures that these two artifacts remain logically aligned after every save operation.
+Consistency between these artifacts is treated as a data integrity requirement. Save operations update the canonical state and maintain compatibility exports in the same transaction scope.
 
-Because annotation quality directly affects downstream model reliability, the module is designed to minimize ambiguity in save/load semantics and to expose clear feedback after updates. In this sense, it is both a UI module and a data integrity module.
+\subsection{Network and Discovery Module}
+This module spans backend and Android responsibilities. On backend side, it exposes network mode APIs that call dedicated scripts to switch between Wi-Fi and AP operation. On Android side, it implements cache-first discovery and subnet-aware probing.
+
+The module is intentionally context-sensitive: in known infrastructure Wi-Fi scenarios it avoids unnecessary ESP probing, while in AP rescue scenarios it supports full local control. This reduces latency and unnecessary network noise.
 
 \subsection{System Control Module}
-The system control module exposes maintenance actions that are operationally critical in edge deployments. It includes server restart, full device reboot, and poweroff operations, all available through dedicated API endpoints and surfaced in client UI with explicit confirmation flows for high-impact actions.
+System control operations are exposed as dedicated high-impact actions: backend restart, Raspberry Pi reboot, and poweroff. This module is safety-oriented: actions are explicit, require deliberate UI confirmation, and return operational feedback suitable for logs.
 
-This module reduces dependency on ad-hoc SSH intervention for routine maintenance, while preserving safety constraints. In particular, destructive actions are intentionally separated from frequent operational controls and require deliberate confirmation. The implementation thus balances accessibility with risk containment.
+Its value is practical: routine maintenance can be executed from tablet/web without relying on ad-hoc SSH access for every intervention.
 
-From an architectural standpoint, the module is also an example of edge-oriented design philosophy: device management is part of the application surface, not an external afterthought.
+\subsection{Client UI Modules}
+Two client families consume the same backend semantics:
+\begin{itemize}
+  \item Web modules: gallery + labeler with browser-centric interactions,
+  \item Android modules: control dashboard + paginated gallery + image detail dialog.
+\end{itemize}
 
-\subsection{Discovery Module}
-The discovery module resolves reachable service endpoints for Raspberry Pi and, where applicable, ESP32-CAM devices. Its implementation follows a cache-first strategy: previously valid hosts are tested before launching wider subnet scans. This behavior significantly reduces perceived latency during repeated usage sessions.
+The project deliberately keeps business rules out of UI layers. Clients orchestrate and visualize; server APIs remain the source of truth.
 
-Discovery is context-aware with respect to network mode. In AP scenarios, device probing behavior differs from standard Wi-Fi scenarios, and unnecessary scans are intentionally avoided when operational assumptions make them unlikely to produce useful results. This adaptive strategy improves responsiveness and reduces background network noise.
-
-The module is tightly linked to usability: fast and reliable discovery determines whether control operations feel immediate or cumbersome. For this reason, discovery is treated as a dedicated module rather than embedded utility code.
-
-\subsection{Module Interactions and Cohesion}
-Although each module has a distinct responsibility, the implementation emphasizes cohesive interactions. Capture feeds gallery, gallery feeds labeling, labeling feeds export quality, and system/discovery modules preserve runtime operability. The backend API layer is the contract that coordinates these interactions and prevents coupling through hidden client-side assumptions.
-
-This modular decomposition has two practical benefits. First, it allows targeted refactoring without destabilizing unrelated features. Second, it creates a clear path for future extensions, since new capabilities can be attached to existing contracts with controlled impact on already validated workflows.
+\subsection{Module Cohesion}
+The module graph is cohesive by design: capture produces images; sensor enrichment adds context; gallery and labeling transform raw artifacts into curated datasets; network/discovery keep the system reachable; system control preserves recoverability. This decomposition has proven practical during iterative refactoring because changes can be localized while preserving cross-module contracts.

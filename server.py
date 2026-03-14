@@ -52,6 +52,12 @@ CAPTURE_LOOP_STARTED_AT = None
 CAPTURE_LOOP_INTERVAL = None
 CAPTURE_LOOP_LOCK = threading.Lock()
 CAPTURE_LOOP_LOG = os.path.join("/tmp", "agriapp-capture-loop.log")
+ESP_CAPTURE_LOOP_PROC = None
+ESP_CAPTURE_LOOP_STARTED_AT = None
+ESP_CAPTURE_LOOP_INTERVAL = None
+ESP_CAPTURE_LOOP_BASE = None
+ESP_CAPTURE_LOOP_LOCK = threading.Lock()
+ESP_CAPTURE_LOOP_LOG = os.path.join("/tmp", "agriapp-esp-capture-loop.log")
 
 
 def _capture_loop_script_path() -> str:
@@ -87,6 +93,35 @@ def _capture_loop_status_payload():
         "started_at_ts": CAPTURE_LOOP_STARTED_AT if running else None,
         "next_capture_in_seconds": next_capture_in_seconds,
         "log_path": CAPTURE_LOOP_LOG,
+    }
+
+
+def _capture_esp_loop_is_running() -> bool:
+    global ESP_CAPTURE_LOOP_PROC
+    if ESP_CAPTURE_LOOP_PROC is None:
+        return False
+    if ESP_CAPTURE_LOOP_PROC.poll() is None:
+        return True
+    ESP_CAPTURE_LOOP_PROC = None
+    return False
+
+
+def _capture_esp_loop_status_payload():
+    running = _capture_esp_loop_is_running()
+    pid = ESP_CAPTURE_LOOP_PROC.pid if running and ESP_CAPTURE_LOOP_PROC else None
+    next_capture_in_seconds = None
+    if running and ESP_CAPTURE_LOOP_INTERVAL and ESP_CAPTURE_LOOP_STARTED_AT:
+        elapsed = max(0, int(time.time()) - int(ESP_CAPTURE_LOOP_STARTED_AT))
+        next_capture_in_seconds = (int(ESP_CAPTURE_LOOP_INTERVAL) - (elapsed % int(ESP_CAPTURE_LOOP_INTERVAL))) % int(ESP_CAPTURE_LOOP_INTERVAL)
+    return {
+        "status": "success",
+        "running": running,
+        "pid": pid,
+        "interval_seconds": ESP_CAPTURE_LOOP_INTERVAL if running else None,
+        "started_at_ts": ESP_CAPTURE_LOOP_STARTED_AT if running else None,
+        "next_capture_in_seconds": next_capture_in_seconds,
+        "esp_base": ESP_CAPTURE_LOOP_BASE if running else None,
+        "log_path": ESP_CAPTURE_LOOP_LOG,
     }
 
 
@@ -1206,15 +1241,25 @@ def api_esp_capture_proxy():
         return jsonify({"status": "error", "message": "capture_esp.py helper not found"}), 500
 
     tmp_name = os.path.join("/tmp", f"esp_api_{int(time.time() * 1000)}.jpg")
-    cmd = [
+    strict_cmd = [
         "python3",
         helper,
         "--url",
         esp_capture_url,
         "--framesize",
         "qxga",
-        "--set",
-        "quality=10",
+        "--timeout",
+        "20",
+        "--out",
+        tmp_name,
+    ]
+    fallback_cmd = [
+        "python3",
+        helper,
+        "--url",
+        esp_capture_url,
+        "--framesize",
+        "qxga",
         "--timeout",
         "20",
         "--out",
@@ -1223,7 +1268,7 @@ def api_esp_capture_proxy():
 
     try:
         proc = subprocess.run(
-            cmd,
+            strict_cmd,
             cwd=os.path.dirname(__file__),
             capture_output=True,
             text=True,
@@ -1235,6 +1280,27 @@ def api_esp_capture_proxy():
     except Exception as e:
         return jsonify({"status": "error", "message": f"esp capture failed: {e}"}), 500
 
+    used_fallback = False
+    strict_stdout = (proc.stdout or "")
+    strict_stderr = (proc.stderr or "")
+    if proc.returncode != 0:
+        # Some firmware variants intermittently reject /control (framesize/quality).
+        # Retry a plain /capture to avoid hard-failing the API when controls fail.
+        try:
+            proc = subprocess.run(
+                fallback_cmd,
+                cwd=os.path.dirname(__file__),
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
+            )
+            used_fallback = proc.returncode == 0
+        except subprocess.TimeoutExpired:
+            return jsonify({"status": "error", "message": "esp capture timeout"}), 504
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"esp capture failed: {e}"}), 500
+
     if proc.returncode != 0:
         return jsonify(
             {
@@ -1243,6 +1309,8 @@ def api_esp_capture_proxy():
                 "returncode": proc.returncode,
                 "stdout": (proc.stdout or "")[-500:],
                 "stderr": (proc.stderr or "")[-500:],
+                "strict_stdout": strict_stdout[-500:],
+                "strict_stderr": strict_stderr[-500:],
             }
         ), 502
 
@@ -1280,6 +1348,8 @@ def api_esp_capture_proxy():
         as_attachment=False,
         download_name="esp_capture.jpg",
     )
+    if used_fallback:
+        resp.headers["X-AgriApp-Esp-Fallback"] = "1"
     if saved_name:
         resp.headers["X-AgriApp-Filename"] = saved_name
         if saved_metadata.get("latitude") is not None:
@@ -1287,6 +1357,116 @@ def api_esp_capture_proxy():
         if saved_metadata.get("longitude") is not None:
             resp.headers["X-AgriApp-Longitude"] = str(saved_metadata["longitude"])
     return resp
+
+
+@app.route("/api/v1/capture/esp/loop/status", methods=["GET"])
+def api_esp_capture_loop_status():
+    with ESP_CAPTURE_LOOP_LOCK:
+        payload = _capture_esp_loop_status_payload()
+    return jsonify(payload)
+
+
+@app.route("/api/v1/capture/esp/loop/start", methods=["POST"])
+def api_esp_capture_loop_start():
+    global ESP_CAPTURE_LOOP_PROC, ESP_CAPTURE_LOOP_STARTED_AT, ESP_CAPTURE_LOOP_INTERVAL, ESP_CAPTURE_LOOP_BASE
+    data = request.get_json(silent=True) or {}
+    interval_raw = data.get("interval_seconds", 300)
+    esp_base = (data.get("esp_base") or "").strip()
+
+    try:
+        interval = int(interval_raw)
+    except Exception:
+        return jsonify({"status": "error", "message": "invalid interval_seconds"}), 400
+    if interval < 5 or interval > 86400:
+        return jsonify({"status": "error", "message": "interval_seconds must be in [5, 86400]"}), 400
+    if not esp_base:
+        return jsonify({"status": "error", "message": "missing esp_base"}), 400
+
+    try:
+        parsed = urllib.parse.urlsplit(esp_base)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return jsonify({"status": "error", "message": "invalid esp_base"}), 400
+        host = parsed.hostname or ""
+        ip_obj = ipaddress.ip_address(host)
+        if not ip_obj.is_private:
+            return jsonify({"status": "error", "message": "esp_base must be private IP"}), 400
+    except Exception:
+        return jsonify({"status": "error", "message": "invalid esp_base"}), 400
+
+    helper = _capture_esp_helper_path()
+    if not os.path.exists(helper):
+        return jsonify({"status": "error", "message": "capture_esp.py helper not found"}), 500
+
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    capture_url = f"{base}/capture"
+    loop_cmd = (
+        f'while true; do '
+        f'python3 "{helper}" --url "{capture_url}" --framesize qxga --timeout 20 '
+        f'--out "{IMAGES_DIR}/esp_$(date +%Y%m%d-%H%M%S).jpg"; '
+        f'sleep {interval}; '
+        f'done'
+    )
+
+    with ESP_CAPTURE_LOOP_LOCK:
+        if _capture_esp_loop_is_running():
+            payload = _capture_esp_loop_status_payload()
+            payload["message"] = "esp capture loop already running"
+            return jsonify(payload), 409
+
+        try:
+            log_f = open(ESP_CAPTURE_LOOP_LOG, "a", buffering=1)
+            log_f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] start interval={interval} base={base}\n")
+            ESP_CAPTURE_LOOP_PROC = subprocess.Popen(
+                ["bash", "-lc", loop_cmd],
+                cwd=os.path.dirname(__file__),
+                stdout=log_f,
+                stderr=log_f,
+                text=True,
+            )
+            ESP_CAPTURE_LOOP_STARTED_AT = int(time.time())
+            ESP_CAPTURE_LOOP_INTERVAL = interval
+            ESP_CAPTURE_LOOP_BASE = base
+        except Exception as e:
+            ESP_CAPTURE_LOOP_PROC = None
+            ESP_CAPTURE_LOOP_STARTED_AT = None
+            ESP_CAPTURE_LOOP_INTERVAL = None
+            ESP_CAPTURE_LOOP_BASE = None
+            return jsonify({"status": "error", "message": f"failed to start esp capture loop: {e}"}), 500
+
+        payload = _capture_esp_loop_status_payload()
+        payload["message"] = "esp capture loop started"
+        return jsonify(payload)
+
+
+@app.route("/api/v1/capture/esp/loop/stop", methods=["POST"])
+def api_esp_capture_loop_stop():
+    global ESP_CAPTURE_LOOP_PROC, ESP_CAPTURE_LOOP_STARTED_AT, ESP_CAPTURE_LOOP_INTERVAL, ESP_CAPTURE_LOOP_BASE
+
+    with ESP_CAPTURE_LOOP_LOCK:
+        if not _capture_esp_loop_is_running():
+            ESP_CAPTURE_LOOP_PROC = None
+            ESP_CAPTURE_LOOP_STARTED_AT = None
+            ESP_CAPTURE_LOOP_INTERVAL = None
+            ESP_CAPTURE_LOOP_BASE = None
+            return jsonify({"status": "success", "running": False, "message": "esp capture loop already stopped"})
+
+        proc = ESP_CAPTURE_LOOP_PROC
+        try:
+            proc.terminate()
+            proc.wait(timeout=8)
+        except Exception:
+            try:
+                proc.kill()
+                proc.wait(timeout=3)
+            except Exception:
+                pass
+
+        ESP_CAPTURE_LOOP_PROC = None
+        ESP_CAPTURE_LOOP_STARTED_AT = None
+        ESP_CAPTURE_LOOP_INTERVAL = None
+        ESP_CAPTURE_LOOP_BASE = None
+
+    return jsonify({"status": "success", "running": False, "message": "esp capture loop stopped"})
 
 
 @app.route("/image-status")

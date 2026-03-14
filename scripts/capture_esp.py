@@ -158,16 +158,14 @@ def capture_from_http(url, out, timeout, count, interval, framesize, control_par
             set_control_http(url, var_name, var_val, timeout)
             time.sleep(0.1)
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-            print(f"Failed to set {var_name}: {exc}", file=sys.stderr)
-            return 7
+            print(f"Warning: failed to set {var_name}: {exc}", file=sys.stderr)
 
     if framesize:
         try:
             set_framesize_http(url, framesize, timeout)
             time.sleep(0.2)
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-            print(f"Failed to set framesize: {exc}", file=sys.stderr)
-            return 7
+            print(f"Warning: failed to set framesize: {exc}", file=sys.stderr)
 
     for idx in range(1, count + 1):
         try:

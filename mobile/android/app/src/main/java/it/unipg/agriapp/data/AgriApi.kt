@@ -30,6 +30,15 @@ interface AgriApi {
     @POST("/api/v1/capture/loop/stop")
     suspend fun stopCaptureLoop(): CaptureLoopStatusResponse
 
+    @GET("/api/v1/capture/esp/loop/status")
+    suspend fun espCaptureLoopStatus(): CaptureLoopStatusResponse
+
+    @POST("/api/v1/capture/esp/loop/start")
+    suspend fun startEspCaptureLoop(@Body req: EspCaptureLoopStartRequest): CaptureLoopStatusResponse
+
+    @POST("/api/v1/capture/esp/loop/stop")
+    suspend fun stopEspCaptureLoop(): CaptureLoopStatusResponse
+
     @GET("/api/v1/network/mode")
     suspend fun networkMode(): NetworkModeResponse
 
