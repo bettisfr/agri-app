@@ -33,11 +33,13 @@ Tablet validation combines API integration, discovery behavior, and interaction 
 \end{itemize}
 
 Validation also includes UI-level safeguards for high-impact operations (delete-all, reboot, poweroff), ensuring that destructive actions require explicit confirmation and produce clear feedback in logs/status components.
+Auto-capture validation now explicitly includes three start modes (\texttt{RPi}, \texttt{ESP}, \texttt{Both}) and corresponding stop actions, verifying that each loop state is correctly reflected in UI and backend status endpoints.
+Validation also includes interaction guards: start must be disabled while loops are active, and stop must be enabled only when at least one loop is running.
 
 \subsection{Network-Mode Validation}
 Because deployment environments are heterogeneous, testing includes explicit network-mode checks. In infrastructure Wi-Fi mode, clients must connect through known subnet endpoints with minimal discovery overhead. In AP rescue mode, the same core operations must remain available without dependence on external routers.
 
-Mode transitions are tested as workflows, not as isolated toggles. This means validating that, after switching network context, discovery, status retrieval, gallery access, and capture controls remain functional without manual repair steps.
+Mode transitions are tested as workflows, not as isolated toggles. This means validating that, after switching network context, discovery, status retrieval, gallery access, and capture controls remain functional without manual repair steps. Current client behavior includes an automatic discovery pass shortly after mode switching to absorb expected subnet changes.
 
 \subsection{Regression Strategy}
 The project follows an iterative ``change-verify-sync'' cycle. After meaningful modifications:
@@ -55,6 +57,7 @@ A deployment iteration is considered acceptable when the following conditions ar
 \begin{itemize}
   \item backend API v1 endpoints respond with expected schemas;
   \item one-shot capture updates gallery state correctly;
+  \item unattended capture loops (RPi and ESP) can be started/stopped and reported correctly;
   \item contextual metadata values are persisted and rendered when available;
   \item thumbnail endpoints return reduced payload images for list/grid views;
   \item gallery pagination and label workflows remain consistent;

@@ -58,6 +58,8 @@ data class MainUiState(
     val autoCaptureEspStartedAtTs: Long? = null,
     val selectedAutoCaptureIntervalSeconds: Int = 300,
     val selectedAutoCaptureSource: String = "rpi",
+    val autoDiscoverNeeded: Boolean = false,
+    val autoDiscoverToken: Long = 0L,
     val log: String = "Ready",
     val busy: Boolean = false
 )
@@ -154,13 +156,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 connectedHost = expectedBase,
                 network = net ?: state.network,
                 system = sys ?: state.system,
+                autoDiscoverNeeded = true,
+                autoDiscoverToken = System.currentTimeMillis(),
                 log = "Network switched. Connected to ${expectedBase.removePrefix("http://")} (${net?.mode ?: "mode n/a"})"
             )
         } else {
             state = state.copy(
                 baseUrl = expectedBase,
                 connectedHost = null,
-                log = "Network switch requested. Reconnect taking longer than expected; run Discover."
+                autoDiscoverNeeded = true,
+                autoDiscoverToken = System.currentTimeMillis(),
+                log = "Network switch requested. Host changed subnet; auto-discover pending."
             )
         }
     }
@@ -682,8 +688,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             discoveredRpiBaseUrls = foundRpi,
             discoveredEspBaseUrls = foundEspFinal,
             selectedEspBaseUrl = foundEspFinal.firstOrNull(),
+            autoDiscoverNeeded = false,
             log = "Discovery ${if (quickAnyFound) "quick" else "deep"} done: RPi=${foundRpi.size}, ESP=${foundEspFinal.size}, selected=${updatedBase.removePrefix("http://")}${if (updatedBase != oldBase) ", host changed" else ""}"
         )
+    }
+
+    fun consumeAutoDiscoverRequest() {
+        if (!state.autoDiscoverNeeded) return
+        state = state.copy(autoDiscoverNeeded = false)
     }
 
     private fun runCall(onState: (MainUiState) -> Unit, block: suspend () -> Unit) {

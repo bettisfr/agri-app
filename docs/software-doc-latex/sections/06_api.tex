@@ -29,6 +29,9 @@ Path & Method & Purpose \\
 \texttt{/api/v1/capture/loop/status} & GET & Inspect unattended capture loop state \\
 \texttt{/api/v1/capture/loop/start} & POST & Start unattended capture loop (\texttt{interval\_seconds}) \\
 \texttt{/api/v1/capture/loop/stop} & POST & Stop unattended capture loop \\
+\texttt{/api/v1/capture/esp/loop/status} & GET & Inspect unattended ESP capture loop state \\
+\texttt{/api/v1/capture/esp/loop/start} & POST & Start unattended ESP loop (\texttt{interval\_seconds}, \texttt{esp\_base}) \\
+\texttt{/api/v1/capture/esp/loop/stop} & POST & Stop unattended ESP capture loop \\
 \texttt{/api/v1/download/dataset} & GET & Download full dataset archive \\
 \texttt{/api/v1/download/dataset-selected} & POST & Download archive for selected filenames \\
 \texttt{/api/v1/images/download-with-labels} & GET & Download one image bundle (image+labels+json+metadata) \\
@@ -70,7 +73,7 @@ Core operational routes for the edge runtime include system status/control, netw
 The web interface consumes the same \texttt{/api/v1/images}, \texttt{/api/v1/labels}, deletion, thumbnail, and dataset download contracts used by other clients. This avoids browser-specific backend branches and keeps semantics aligned with tablet behavior.
 
 \subsubsection{Android Tablet Client}
-The Android app focuses on operational routes: discovery + health, status, capture one-shot (RPi/ESP), capture loop start/stop, gallery pagination with thumbnails, and system/network actions. The app intentionally does not introduce private backend APIs; it reuses the same versioned surface.
+The Android app focuses on operational routes: discovery + health, status, capture one-shot (RPi/ESP), capture loop start/stop (RPi and ESP), gallery pagination with thumbnails, and system/network actions. The app intentionally does not introduce private backend APIs; it reuses the same versioned surface.
 
 \subsection{Request and Response Semantics}
 Most endpoints return JSON payloads with explicit \texttt{status} semantics. Binary endpoints (image and ZIP downloads, thumbnail streams, ESP capture proxy stream) return bytes and may include additional headers.
@@ -83,8 +86,31 @@ Image items include contextual metadata fields (GPS latitude/longitude and BME28
 \begin{itemize}
   \item \textbf{RPi one-shot} (\texttt{/api/v1/capture/rpi/oneshot}) executes \texttt{capture\_rpi.sh --oneshot}, stores the generated image, enriches metadata, and returns latest filename.
   \item \textbf{ESP one-shot} (\texttt{/api/v1/capture/esp/oneshot}) requires query \texttt{esp\_base}, validates private IP constraints, executes \texttt{capture\_esp.py}, stores an \texttt{esp\_...} image locally, and streams JPEG bytes as response.
-  \item \textbf{Capture loop} endpoints control unattended periodic capture via backend-managed process state; \texttt{/start} accepts \texttt{interval\_seconds} in a bounded range.
+  \item \textbf{RPi loop} endpoints (\texttt{/api/v1/capture/loop/*}) control unattended periodic capture via backend-managed process state; \texttt{/start} accepts \texttt{interval\_seconds} in a bounded range.
+  \item \textbf{ESP loop} endpoints (\texttt{/api/v1/capture/esp/loop/*}) expose the same control model for ESP, with mandatory \texttt{esp\_base} on start.
 \end{itemize}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    actor/.style={draw, rounded corners, align=center, minimum width=23mm, minimum height=7mm, font=\footnotesize},
+    edge/.style={-{Latex[length=2mm]}, thick},
+    note/.style={font=\scriptsize, align=center}
+]
+\node[actor] (tablet) {Tablet App};
+\node[actor, right=24mm of tablet] (rpi) {RPi Backend\\\texttt{/api/v1}};
+\node[actor, right=24mm of rpi] (esp) {ESP32-CAM};
+\node[actor, below=16mm of rpi] (store) {Local storage\\images + metadata};
+
+\draw[edge] (tablet) -- node[above, note]{GET \texttt{/capture/esp/oneshot}\\(\texttt{esp\_base})} (rpi);
+\draw[edge] (rpi) -- node[above, note]{GET \texttt{/capture}} (esp);
+\draw[edge] (esp) -- node[below, note]{JPEG bytes} (rpi);
+\draw[edge] (rpi) -- node[right, note]{save \texttt{esp\_*.jpg}\\+ metadata enrich} (store);
+\draw[edge] (rpi) -- node[left, note]{JPEG response\\+ headers} (tablet);
+\end{tikzpicture}
+\caption{Sequence of the ESP proxy oneshot API path.}
+\label{fig:api-esp-oneshot-sequence}
+\end{figure}
 
 \subsection{Error Model}
 The API uses conventional HTTP statuses:

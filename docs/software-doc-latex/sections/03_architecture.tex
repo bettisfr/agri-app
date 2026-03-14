@@ -41,6 +41,34 @@ In addition to image sources, the edge tier integrates optional contextual senso
 \label{fig:agriapp-architecture}
 \end{figure}
 
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners, align=center, minimum height=8mm, minimum width=26mm, font=\footnotesize},
+    edge/.style={-{Latex[length=2mm]}, thick},
+    meta/.style={-{Latex[length=2mm]}, thick, dashed}
+]
+\node[box] (scheduler) {Scheduler / API\\(RPi loop, ESP loop)};
+\node[box, below=8mm of scheduler] (capture) {Capture workers\\RPi camera + ESP proxy};
+\node[box, below left=11mm and 12mm of capture] (gps) {GPS};
+\node[box, below right=11mm and 12mm of capture] (bme) {BME280};
+\node[box, below=11mm of capture] (images) {images/};
+\node[box, right=20mm of images] (metaStore) {metadata/};
+\node[box, right=20mm of scheduler] (clients) {Web / Tablet\\Gallery + Labeler};
+
+\draw[edge] (scheduler) -- (capture);
+\draw[edge] (capture) -- (images);
+\draw[meta] (gps) -- (metaStore);
+\draw[meta] (bme) -- (metaStore);
+\draw[meta] (capture.east) -- ++(7mm,0) |- (metaStore.west);
+\draw[edge] (clients.west) -- node[above, font=\scriptsize]{HTTP API} (scheduler.east);
+\draw[edge] (clients.west) -- ++(-8mm,0) |- node[right, font=\scriptsize]{list/view} (images.east);
+\draw[edge] (clients.west) -- ++(-6mm,0) |- node[right, font=\scriptsize]{context} (metaStore.east);
+\end{tikzpicture}
+\caption{Runtime orchestration: capture loops, sensor enrichment, and client data paths.}
+\label{fig:agriapp-runtime-orchestration}
+\end{figure}
+
 \subsection{Data Flow}
 The runtime data flow begins with image acquisition. A capture event, generated either from scheduled logic or from a manual one-shot request, produces an image file that is stored in the local image repository. The storage path is intentionally transparent, so operators and maintainers can inspect and back up data without relying on opaque databases.
 

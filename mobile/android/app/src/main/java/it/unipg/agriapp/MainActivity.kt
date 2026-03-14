@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
                 var showDeleteAllConfirm by remember { mutableStateOf(false) }
                 var logEntries by remember { mutableStateOf(listOf<String>()) }
                 var galleryRefreshing by remember { mutableStateOf(false) }
+                var autoDiscoverInFlight by remember { mutableStateOf(false) }
 
                 LaunchedEffect(Unit) {
                     if (!discoveryStarted) {
@@ -135,6 +136,20 @@ class MainActivity : ComponentActivity() {
                         delay(12_000)
                         vm.refreshGallerySilently { ui = it }
                         vm.loadAutoCaptureStatus { ui = it }
+                    }
+                }
+                LaunchedEffect(ui.autoDiscoverToken) {
+                    if (ui.autoDiscoverNeeded && !autoDiscoverInFlight) {
+                        autoDiscoverInFlight = true
+                        delay(7000)
+                        vm.consumeAutoDiscoverRequest()
+                        ui = vm.state
+                        vm.discoverLan {
+                            ui = it
+                            if (!it.busy) {
+                                autoDiscoverInFlight = false
+                            }
+                        }
                     }
                 }
 
@@ -271,6 +286,7 @@ class MainActivity : ComponentActivity() {
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text("Operations", fontWeight = FontWeight.SemiBold)
+                                    val anyAutoRunning = (ui.autoCaptureRpiRunning == true) || (ui.autoCaptureEspRunning == true)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -286,15 +302,15 @@ class MainActivity : ComponentActivity() {
                                         }
                                         FilledTonalButton(
                                             onClick = { showAutoStartDialog = true },
-                                            enabled = !ui.busy,
+                                            enabled = !ui.busy && !anyAutoRunning,
                                             shape = compactShape,
                                             contentPadding = compactBtnPadding
                                         ) {
                                             Text("Start Auto")
                                         }
                                         FilledTonalButton(
-                                            onClick = { vm.stopAutoCapture({ ui = it }, ui.selectedAutoCaptureSource) },
-                                            enabled = !ui.busy,
+                                            onClick = { vm.stopAutoCapture({ ui = it }, "both") },
+                                            enabled = !ui.busy && anyAutoRunning,
                                             shape = compactShape,
                                             contentPadding = compactBtnPadding
                                         ) {

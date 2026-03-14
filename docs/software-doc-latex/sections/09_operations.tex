@@ -26,10 +26,10 @@ Operational safety remains important: reboot and poweroff are destructive from a
 Capture management now has two complementary modes:
 \begin{itemize}
   \item one-shot capture for immediate validation (RPi or ESP source),
-  \item unattended loop capture controlled by \texttt{/api/v1/capture/loop/*}.
+  \item unattended loop capture controlled by \texttt{/api/v1/capture/loop/*} (RPi) and \texttt{/api/v1/capture/esp/loop/*} (ESP).
 \end{itemize}
 
-For unattended operation, interval selection is an operational parameter (e.g., 1--10 minute presets in tablet UI or explicit API payloads). Start/stop semantics are explicit; operators should always verify loop status after transitions.
+For unattended operation, interval selection is an operational parameter (e.g., 1--10 minute presets in tablet UI or explicit API payloads). Start/stop semantics are explicit; operators should always verify loop status after transitions. In the Android control app, operators can start loops for \texttt{RPi}, \texttt{ESP}, or \texttt{Both}, while status remains source-specific.
 
 \subsection{Metadata Operations (GPS/BME280)}
 Metadata is persisted opportunistically. Operations should treat missing sensor values as a diagnosable condition, not necessarily as a capture failure. If GPS or BME data disappears unexpectedly, the recommended sequence is:
@@ -51,6 +51,30 @@ Thumbnail cache is managed automatically by deletion endpoints, but periodic san
 AgriApp is operated across heterogeneous network contexts. In infrastructure Wi-Fi mode, discovery should be fast and mostly cache-driven. In AP mode, local control continuity takes priority over throughput.
 
 Mode switching must be followed by a brief verification phase (reachability, status endpoint, shot action) before proceeding with high-value operations. This small discipline prevents silent mode drift during field sessions.
+In current tablet operation, a delayed automatic discovery pass is triggered after Wi-Fi/AP mode changes, reducing the need for repeated manual discovery taps during subnet transitions.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    stepbox/.style={draw, rounded corners, align=center, minimum width=30mm, minimum height=8mm, font=\footnotesize},
+    edge/.style={-{Latex[length=2mm]}, thick}
+]
+\node[stepbox] (tap) {User taps\\WiFi/AP};
+\node[stepbox, right=14mm of tap] (switch) {RPi switches\\network mode};
+\node[stepbox, right=14mm of switch] (drop) {Expected link drop\\(subnet change)};
+\node[stepbox, below=10mm of switch] (wait) {App waits\\$\sim$7 seconds};
+\node[stepbox, left=14mm of wait] (discover) {Auto-discover\\runs};
+\node[stepbox, left=14mm of discover] (attach) {New host selected\\and attached};
+
+\draw[edge] (tap) -- (switch);
+\draw[edge] (switch) -- (drop);
+\draw[edge] (drop) |- (wait);
+\draw[edge] (wait) -- (discover);
+\draw[edge] (discover) -- (attach);
+\end{tikzpicture}
+\caption{Operational flow for Wi-Fi/AP transition with delayed automatic discovery.}
+\label{fig:ops-network-switch-discovery}
+\end{figure}
 
 \subsection{Incident Response}
 A practical incident playbook is:
@@ -66,6 +90,7 @@ This order minimizes downtime and preserves diagnostic signal.
 
 \subsection{Operational Logging}
 Effective troubleshooting depends on correlated logs. The project uses a combination of backend logs, systemd status/logs, and Android in-app logs. Operators should record at least three contextual tags when reporting incidents: active network mode, active host/IP, and last successful action.
+Recent app iterations expanded in-app logging with structured operational events (discovery start/end, network switch milestones, auto-loop lifecycle changes, one-shot outcomes, and newly captured filenames). This provides stronger field traceability without increasing shell dependency.
 
 \subsection{Maintenance Outlook}
 Maintenance effort should continue reducing legacy complexity. The most valuable ongoing work is progressive legacy endpoint retirement, tighter contract tests on \texttt{/api/v1}, and continued UI/ops simplification so that field operation stays predictable even as features grow.
