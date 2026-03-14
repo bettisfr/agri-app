@@ -53,29 +53,6 @@ AgriApp is operated across heterogeneous network contexts. In infrastructure Wi-
 Mode switching must be followed by a brief verification phase (reachability, status endpoint, shot action) before proceeding with high-value operations. This small discipline prevents silent mode drift during field sessions.
 In current tablet operation, a delayed automatic discovery pass is triggered after Wi-Fi/AP mode changes, reducing the need for repeated manual discovery taps during subnet transitions.
 
-\begin{figure}[htbp]
-\centering
-\begin{tikzpicture}[
-    stepbox/.style={draw, rounded corners, align=center, minimum width=30mm, minimum height=8mm, font=\footnotesize},
-    edge/.style={-{Latex[length=2mm]}, thick}
-]
-\node[stepbox] (tap) {User taps\\WiFi/AP};
-\node[stepbox, right=14mm of tap] (switch) {RPi switches\\network mode};
-\node[stepbox, right=14mm of switch] (drop) {Expected link drop\\(subnet change)};
-\node[stepbox, below=10mm of switch] (wait) {App waits\\$\sim$7 seconds};
-\node[stepbox, left=14mm of wait] (discover) {Auto-discover\\runs};
-\node[stepbox, left=14mm of discover] (attach) {New host selected\\and attached};
-
-\draw[edge] (tap) -- (switch);
-\draw[edge] (switch) -- (drop);
-\draw[edge] (drop) |- (wait);
-\draw[edge] (wait) -- (discover);
-\draw[edge] (discover) -- (attach);
-\end{tikzpicture}
-\caption{Operational flow for Wi-Fi/AP transition with delayed automatic discovery.}
-\label{fig:ops-network-switch-discovery}
-\end{figure}
-
 \subsection{Incident Response}
 A practical incident playbook is:
 \begin{enumerate}

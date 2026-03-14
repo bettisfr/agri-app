@@ -90,28 +90,6 @@ Image items include contextual metadata fields (GPS latitude/longitude and BME28
   \item \textbf{ESP loop} endpoints (\texttt{/api/v1/capture/esp/loop/*}) expose the same control model for ESP, with mandatory \texttt{esp\_base} on start.
 \end{itemize}
 
-\begin{figure}[htbp]
-\centering
-\begin{tikzpicture}[
-    actor/.style={draw, rounded corners, align=center, minimum width=23mm, minimum height=7mm, font=\footnotesize},
-    edge/.style={-{Latex[length=2mm]}, thick},
-    note/.style={font=\scriptsize, align=center}
-]
-\node[actor] (tablet) {Tablet App};
-\node[actor, right=24mm of tablet] (rpi) {RPi Backend\\\texttt{/api/v1}};
-\node[actor, right=24mm of rpi] (esp) {ESP32-CAM};
-\node[actor, below=16mm of rpi] (store) {Local storage\\images + metadata};
-
-\draw[edge] (tablet) -- node[above, note]{GET \texttt{/capture/esp/oneshot}\\(\texttt{esp\_base})} (rpi);
-\draw[edge] (rpi) -- node[above, note]{GET \texttt{/capture}} (esp);
-\draw[edge] (esp) -- node[below, note]{JPEG bytes} (rpi);
-\draw[edge] (rpi) -- node[right, note]{save \texttt{esp\_*.jpg}\\+ metadata enrich} (store);
-\draw[edge] (rpi) -- node[left, note]{JPEG response\\+ headers} (tablet);
-\end{tikzpicture}
-\caption{Sequence of the ESP proxy oneshot API path.}
-\label{fig:api-esp-oneshot-sequence}
-\end{figure}
-
 \subsection{Error Model}
 The API uses conventional HTTP statuses:
 \begin{itemize}
