@@ -92,8 +92,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.core.view.WindowCompat
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -225,12 +225,17 @@ class MainActivity : ComponentActivity() {
                         onStopAuto = { source ->
                             vm.stopAutoCapture({ ui = it }, source)
                         },
+                        onSetPreferredWifi = { wifiName ->
+                            vm.setPreferredWifiConnection(wifiName)
+                            ui = vm.state
+                        },
                         onRestartServer = { vm.restartServer { ui = it } },
                         onRebootSystem = { vm.rebootRpi { ui = it } },
                         onPoweroffSystem = { vm.poweroffRpi { ui = it } },
                         onGalleryRefresh = { vm.refreshGalleryOnly { ui = it } },
                         onGalleryPrev = { vm.prevImagesPage { ui = it } },
                         onGalleryNext = { vm.nextImagesPage { ui = it } },
+                        onGalleryDeleteAll = { showDeleteAllConfirm = true },
                         onGalleryImageClick = {
                             val selectedIndex = ui.images.indexOfFirst { item -> item.filename == it }.coerceAtLeast(0)
                             val filenames = ui.images.map { item -> item.filename }.toTypedArray()
@@ -605,8 +610,8 @@ private enum class PhoneTab(
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
     Home("Home", Icons.Default.Home),
-    Capture("Capture", Icons.Default.Settings),
-    Gallery("Gallery", Icons.Default.Info),
+    Capture("Capture", Icons.Default.PhotoCamera),
+    Gallery("Gallery", Icons.Default.PhotoLibrary),
     System("System", Icons.Default.Build),
     Log("Log", Icons.Default.List),
 }
@@ -628,12 +633,14 @@ private fun PhoneMainScaffold(
     onShot: (String) -> Unit,
     onStartAuto: (String, Int) -> Unit,
     onStopAuto: (String) -> Unit,
+    onSetPreferredWifi: (String) -> Unit,
     onRestartServer: () -> Unit,
     onRebootSystem: () -> Unit,
     onPoweroffSystem: () -> Unit,
     onGalleryRefresh: () -> Unit,
     onGalleryPrev: () -> Unit,
     onGalleryNext: () -> Unit,
+    onGalleryDeleteAll: () -> Unit,
     onGalleryImageClick: (String) -> Unit,
     onGalleryDeleteClick: (String) -> Unit
 ) {
@@ -848,6 +855,12 @@ private fun PhoneMainScaffold(
                                     shape = compactShape,
                                     contentPadding = compactBtnPadding
                                 ) { Text("Next") }
+                                FilledTonalButton(
+                                    onClick = onGalleryDeleteAll,
+                                    enabled = !ui.busy && ui.images.isNotEmpty(),
+                                    shape = compactShape,
+                                    contentPadding = compactBtnPadding
+                                ) { Text("Delete all") }
                             }
                             PhoneGalleryGrid(
                                 modifier = Modifier.weight(1f),
@@ -855,8 +868,7 @@ private fun PhoneMainScaffold(
                                 items = ui.images,
                                 refreshing = ui.busy,
                                 onRefresh = onGalleryRefresh,
-                                onImageClick = onGalleryImageClick,
-                                onDeleteClick = onGalleryDeleteClick
+                                onImageClick = onGalleryImageClick
                             )
                         }
                     }
@@ -875,6 +887,31 @@ private fun PhoneMainScaffold(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text("System", fontWeight = FontWeight.SemiBold)
+                            val activeClientConn = ui.network?.active_wifi_connections?.firstOrNull { it != ui.network?.ap_connection }
+                            Text(
+                                text = "Current WiFi: ${activeClientConn ?: "n/a"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Preferred WiFi: ${ui.preferredWifiConnection ?: "n/a"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (ui.knownWifiConnections.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    ui.knownWifiConnections.forEach { wifi ->
+                                        AssistChip(
+                                            onClick = { onSetPreferredWifi(wifi) },
+                                            label = { Text(if (ui.preferredWifiConnection == wifi) "• $wifi" else wifi) }
+                                        )
+                                    }
+                                }
+                            }
                             FilledTonalButton(
                                 onClick = onRestartServer,
                                 enabled = !ui.busy,
@@ -956,8 +993,7 @@ private fun PhoneGalleryGrid(
     items: List<it.unipg.agriapp.data.ImageItem>,
     refreshing: Boolean,
     onRefresh: () -> Unit,
-    onImageClick: (String) -> Unit,
-    onDeleteClick: (String) -> Unit
+    onImageClick: (String) -> Unit
 ) {
     val pullRefreshState = rememberPullRefreshState(
         refreshing = refreshing,
@@ -999,16 +1035,6 @@ private fun PhoneGalleryGrid(
                                     .clickable { onImageClick(item.filename) },
                                 contentScale = ContentScale.Crop
                             )
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(999.dp))
-                                    .clickable { onDeleteClick(item.filename) }
-                                    .padding(horizontal = 6.dp, vertical = 1.dp)
-                            ) {
-                                Text("X", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
-                            }
                         }
                         Text(formatCompactDateTimeGrid(item.filename), maxLines = 2, style = MaterialTheme.typography.bodySmall)
                     }
@@ -1354,49 +1380,14 @@ private fun BottomLogPanel(
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
                     .padding(4.dp)
             ) {
-                val trackColor = MaterialTheme.colorScheme.outlineVariant
-                val thumbColor = MaterialTheme.colorScheme.primary
                 LazyColumn(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(end = 10.dp),
+                        .fillMaxSize(),
                     state = listState
                 ) {
                     items(entries) { line ->
                         Text(line)
                     }
-                }
-
-                Canvas(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width(6.dp)
-                ) {
-                    val total = entries.size.coerceAtLeast(1)
-                    val visible = listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
-                    val first = listState.firstVisibleItemIndex.coerceAtLeast(0)
-
-                    drawRoundRect(
-                        color = trackColor,
-                        topLeft = Offset(0f, 0f),
-                        size = Size(size.width, size.height),
-                        cornerRadius = CornerRadius(size.width, size.width)
-                    )
-
-                    val minThumbFraction = 0.10f
-                    val thumbFraction = (visible.toFloat() / total.toFloat()).coerceIn(minThumbFraction, 1f)
-                    val thumbHeight = size.height * thumbFraction
-                    val maxTop = (size.height - thumbHeight).coerceAtLeast(0f)
-                    val progress = if (total <= visible) 0f else (first.toFloat() / (total - visible).toFloat()).coerceIn(0f, 1f)
-                    val top = maxTop * progress
-
-                    drawRoundRect(
-                        color = thumbColor,
-                        topLeft = Offset(0f, top),
-                        size = Size(size.width, thumbHeight),
-                        cornerRadius = CornerRadius(size.width, size.width)
-                    )
                 }
             }
         }
