@@ -10,6 +10,7 @@ static/uploads/jsons
 firmware/esp32-cam/secrets.h
 mobile/android/.gradle/
 mobile/android/.gradle-local/
+/.gradle-local/
 mobile/android/build/
 mobile/android/app/build/
 mobile/android/local.properties
