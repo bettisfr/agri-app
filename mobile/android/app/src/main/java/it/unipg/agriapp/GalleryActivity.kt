@@ -29,7 +29,8 @@ import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,7 +55,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -179,7 +179,7 @@ class GalleryActivity : ComponentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(Color(0x44000000)),
+                                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.25f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 CircularProgressIndicator()
@@ -215,42 +215,32 @@ class GalleryActivity : ComponentActivity() {
                 }
 
                 pendingDelete?.let { filename ->
-                    AlertDialog(
-                        onDismissRequest = { pendingDelete = null },
-                        title = { Text("Delete image?") },
-                        text = { Text("Are you sure you want to delete $filename?") },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    vm.deleteImage(filename) { ui = it }
-                                    pendingDelete = null
-                                },
-                                enabled = !ui.busy
-                            ) { Text("Delete") }
+                    GalleryConfirmDialog(
+                        title = "Delete image?",
+                        message = "Are you sure you want to delete $filename?",
+                        confirmLabel = "Delete",
+                        destructive = true,
+                        busy = ui.busy,
+                        onConfirm = {
+                            vm.deleteImage(filename) { ui = it }
+                            pendingDelete = null
                         },
-                        dismissButton = {
-                            TextButton(onClick = { pendingDelete = null }, enabled = !ui.busy) { Text("Cancel") }
-                        }
+                        onDismiss = { pendingDelete = null }
                     )
                 }
 
                 if (showDeleteAllConfirm) {
-                    AlertDialog(
-                        onDismissRequest = { showDeleteAllConfirm = false },
-                        title = { Text("Delete all images?") },
-                        text = { Text("Are you sure you want to delete all gallery images, labels and json files?") },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    vm.deleteAll { ui = it }
-                                    showDeleteAllConfirm = false
-                                },
-                                enabled = !ui.busy
-                            ) { Text("Delete All") }
+                    GalleryConfirmDialog(
+                        title = "Delete all images?",
+                        message = "Are you sure you want to delete all gallery images, labels and json files?",
+                        confirmLabel = "Delete all",
+                        destructive = true,
+                        busy = ui.busy,
+                        onConfirm = {
+                            vm.deleteAll { ui = it }
+                            showDeleteAllConfirm = false
                         },
-                        dismissButton = {
-                            TextButton(onClick = { showDeleteAllConfirm = false }, enabled = !ui.busy) { Text("Cancel") }
-                        }
+                        onDismiss = { showDeleteAllConfirm = false }
                     )
                 }
             }
@@ -259,6 +249,54 @@ class GalleryActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_BASE_URL = "extra_base_url"
+    }
+}
+
+@Composable
+private fun GalleryConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String = "Confirm",
+    destructive: Boolean = false,
+    busy: Boolean = false,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(
+                        onClick = onDismiss,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("Cancel") }
+                    Button(
+                        onClick = onConfirm,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = if (destructive) {
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError
+                            )
+                        } else ButtonDefaults.buttonColors()
+                    ) { Text(confirmLabel) }
+                }
+            }
+        }
     }
 }
 
@@ -282,6 +320,8 @@ private fun GalleryImageList(
             .fillMaxWidth()
             .pullRefresh(pullRefreshState)
     ) {
+        val trackColor = MaterialTheme.colorScheme.outlineVariant
+        val thumbColor = MaterialTheme.colorScheme.primary
         Box(modifier = Modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 220.dp),
@@ -324,20 +364,20 @@ private fun GalleryImageList(
                                         .align(Alignment.TopEnd)
                                         .padding(6.dp)
                                         .background(
-                                            Color(0xFFD32F2F).copy(alpha = 0.95f),
+                                            MaterialTheme.colorScheme.errorContainer,
                                             RoundedCornerShape(999.dp)
                                         )
                                         .clickable { onDeleteClick(item.filename) }
                                         .padding(horizontal = 7.dp, vertical = 2.dp)
                                 ) {
-                                    Text("X", color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text("X", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
                                 }
                             }
                             Column(modifier = Modifier.clickable { onImageClick(item.filename) }) {
                                 Text(
                                     formatDisplayTitle(item.filename),
                                     fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
@@ -373,9 +413,6 @@ private fun GalleryImageList(
                 val total = ui.images.size.coerceAtLeast(1)
                 val visible = gridState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
                 val first = gridState.firstVisibleItemIndex.coerceAtLeast(0)
-
-                val trackColor = Color(0xFFC7D6C3)
-                val thumbColor = Color(0xFF5E7F58)
 
                 drawRoundRect(
                     color = trackColor,
@@ -552,24 +589,23 @@ private fun formatGridEnvOnly(metadata: ImageMetadata?): String {
 }
 
 private fun formatDisplayTitle(filename: String): String {
-    val lower = filename.lowercase(Locale.getDefault())
     val source = when {
-        lower.startsWith("rpi_") -> "RPi"
-        lower.startsWith("esp_") -> "ESP"
-        else -> null
-    } ?: return filename
-
+        filename.lowercase(Locale.getDefault()).startsWith("rpi_") -> "RPi"
+        filename.lowercase(Locale.getDefault()).startsWith("esp_") -> "ESP"
+        else -> "Image"
+    }
     val stamp = filename
         .substringAfter('_', "")
         .substringBefore('.')
-    if (stamp.length != 15 || stamp[8] != '-') return "$source | $filename"
+    if (stamp.length != 15 || stamp[8] != '-') return filename
 
     return try {
         val inFmt = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
-        val date = inFmt.parse(stamp) ?: return "$source | $filename"
-        val outFmt = SimpleDateFormat("EEE dd MMM yyyy HH:mm:ss", Locale.getDefault())
-        "$source | ${outFmt.format(Date(date.time))}"
+        val date = inFmt.parse(stamp) ?: return filename
+        val outDate = SimpleDateFormat("d MMM yyyy", Locale.getDefault())
+        val outTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        "$source ${outDate.format(Date(date.time))}\n${outTime.format(Date(date.time))}"
     } catch (_: Exception) {
-        "$source | $filename"
+        filename
     }
 }

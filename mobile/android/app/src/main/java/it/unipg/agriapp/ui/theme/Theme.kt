@@ -1,42 +1,26 @@
 package it.unipg.agriapp.ui.theme
 
+import android.os.Build
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Shapes
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.unit.dp
-
-private val AgriLightColorScheme = lightColorScheme(
-    primary = AgriPrimary,
-    onPrimary = AgriOnPrimary,
-    primaryContainer = AgriPrimaryContainer,
-    onPrimaryContainer = AgriOnPrimaryContainer,
-    secondary = AgriSecondary,
-    onSecondary = AgriOnSecondary,
-    secondaryContainer = AgriSecondaryContainer,
-    onSecondaryContainer = AgriOnSecondaryContainer,
-    tertiary = AgriTertiary,
-    onTertiary = AgriOnTertiary,
-    surface = AgriSurface,
-    background = AgriBackground,
-    onSurface = AgriOnSurface,
-    onBackground = AgriOnBackground,
-)
-
-private val AgriShapes = Shapes(
-    extraSmall = RoundedCornerShape(4.dp),
-    small = RoundedCornerShape(6.dp),
-    medium = RoundedCornerShape(8.dp),
-    large = RoundedCornerShape(10.dp),
-    extraLarge = RoundedCornerShape(12.dp),
-)
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun AgriAppTheme(content: @Composable () -> Unit) {
+    val darkTheme = isSystemInDarkTheme()
+    val context = LocalContext.current
+    val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else {
+        if (darkTheme) darkColorScheme() else lightColorScheme()
+    }
     MaterialTheme(
-        colorScheme = AgriLightColorScheme,
-        shapes = AgriShapes,
+        colorScheme = colorScheme,
         content = content,
     )
 }

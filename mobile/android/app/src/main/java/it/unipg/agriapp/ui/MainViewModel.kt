@@ -297,9 +297,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         applyImagesResponse(imagesRes, preferred)
         state = state.copy(
             connectedHost = state.baseUrl,
-            viewerImageUrl = preferred?.let { "${state.baseUrl}/static/uploads/images/$it" },
+            viewerImageUrl = null,
             viewerImageBytes = null,
-            viewerTitle = preferred ?: "RPi capture",
+            viewerTitle = null,
             log = "Shot RPi ${res.status}: ${res.latest_filename ?: "no filename"}"
         )
     }
@@ -518,7 +518,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setAutoCaptureInterval(intervalSeconds: Int) {
-        val allowed = setOf(60, 120, 180, 300, 600)
+        val allowed = setOf(30, 60, 120, 180, 300)
         if (intervalSeconds !in allowed) return
         state = state.copy(selectedAutoCaptureIntervalSeconds = intervalSeconds)
     }
@@ -557,8 +557,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state.copy(
                 selectedEspBaseUrl = espBase,
                 viewerImageUrl = null,
-                viewerImageBytes = espResult.jpegBytes,
-                viewerTitle = "ESP capture",
+                viewerImageBytes = null,
+                viewerTitle = null,
                 log = "ESP capture: success ${latest ?: ""}$dimText${if (lowQxga) " [WARN below QXGA]" else ""} (via ${rpiBase.removePrefix("http://")}, esp ${espBase.removePrefix("http://")})".trim()
             )
         } else {

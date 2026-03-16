@@ -23,20 +23,25 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,14 +76,24 @@ import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.ExperimentalMaterialApi
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.foundation.isSystemInDarkTheme
 import it.unipg.agriapp.data.ImageMetadata
 import kotlin.math.abs
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Info
+import androidx.core.view.WindowCompat
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -86,6 +101,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             AgriAppTheme {
+                val view = LocalView.current
+                val isDark = isSystemInDarkTheme()
+                val systemBarsColor = MaterialTheme.colorScheme.background.toArgb()
+                SideEffect {
+                    window.statusBarColor = systemBarsColor
+                    window.navigationBarColor = systemBarsColor
+                    WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
+                    WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !isDark
+                }
                 val compactShape = RoundedCornerShape(12.dp)
                 val compactBtnPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 val vm: MainViewModel = viewModel()
@@ -155,24 +179,88 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Scaffold(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    topBar = {
-                        TopAppBar(
-                            title = { Text("AgriApp Control", fontWeight = FontWeight.SemiBold) },
-                            colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                titleContentColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            actions = {
-                                Text(
-                                    text = ui.connectedHost?.removePrefix("http://") ?: "No active host",
-                                    modifier = Modifier.padding(end = 12.dp),
-                                    fontWeight = FontWeight.Bold
-                                )
+                val isPhoneLayout = LocalConfiguration.current.screenWidthDp < 700
+
+                if (isPhoneLayout) {
+                    PhoneMainScaffold(
+                        ui = ui,
+                        compactShape = compactShape,
+                        compactBtnPadding = compactBtnPadding,
+                        logEntries = logEntries,
+                        onDiscover = { vm.discoverLan { ui = it } },
+                        onSetWifi = { vm.setNetworkMode("wifi_only") { ui = it } },
+                        onSetAp = { vm.setNetworkMode("ap_only") { ui = it } },
+                        onSelectRpiHost = { host ->
+                            vm.updateBaseUrl(host)
+                            ui = vm.state
+                        },
+                        onSelectEspHost = { host ->
+                            vm.selectEspHost(host)
+                            ui = vm.state
+                        },
+                        onSetCaptureSource = { source ->
+                            vm.setAutoCaptureSource(source)
+                            ui = vm.state
+                        },
+                        onSetCaptureInterval = { seconds ->
+                            vm.setAutoCaptureInterval(seconds)
+                            ui = vm.state
+                        },
+                        onShot = { source ->
+                            when (source) {
+                                "esp" -> vm.oneShotEsp { ui = it }
+                                "both" -> vm.oneShotRpi {
+                                    ui = it
+                                    vm.oneShotEsp { ui = it }
+                                }
+                                else -> vm.oneShotRpi { ui = it }
                             }
-                        )
-                    }
+                        },
+                        onStartAuto = { source, interval ->
+                            vm.setAutoCaptureSource(source)
+                            vm.setAutoCaptureInterval(interval)
+                            vm.startAutoCapture({ ui = it }, source = source, intervalSeconds = interval)
+                        },
+                        onStopAuto = { source ->
+                            vm.stopAutoCapture({ ui = it }, source)
+                        },
+                        onRestartServer = { vm.restartServer { ui = it } },
+                        onRebootSystem = { vm.rebootRpi { ui = it } },
+                        onPoweroffSystem = { vm.poweroffRpi { ui = it } },
+                        onGalleryRefresh = { vm.refreshGalleryOnly { ui = it } },
+                        onGalleryPrev = { vm.prevImagesPage { ui = it } },
+                        onGalleryNext = { vm.nextImagesPage { ui = it } },
+                        onGalleryImageClick = {
+                            val selectedIndex = ui.images.indexOfFirst { item -> item.filename == it }.coerceAtLeast(0)
+                            val filenames = ui.images.map { item -> item.filename }.toTypedArray()
+                            val latitudes = DoubleArray(ui.images.size) { idx -> ui.images[idx].metadata?.latitude ?: Double.NaN }
+                            val longitudes = DoubleArray(ui.images.size) { idx -> ui.images[idx].metadata?.longitude ?: Double.NaN }
+                            val temperatures = DoubleArray(ui.images.size) { idx -> ui.images[idx].metadata?.temperature ?: Double.NaN }
+                            val humidities = DoubleArray(ui.images.size) { idx -> ui.images[idx].metadata?.humidity ?: Double.NaN }
+                            val pressures = DoubleArray(ui.images.size) { idx -> ui.images[idx].metadata?.pressure ?: Double.NaN }
+                            val selected = ui.images.getOrNull(selectedIndex)
+                            val intent = Intent(this@MainActivity, ImageViewerActivity::class.java)
+                            intent.putExtra(ImageViewerActivity.EXTRA_BASE_URL, ui.baseUrl)
+                            intent.putExtra(ImageViewerActivity.EXTRA_FILENAME, it)
+                            intent.putExtra(ImageViewerActivity.EXTRA_LATITUDE, selected?.metadata?.latitude)
+                            intent.putExtra(ImageViewerActivity.EXTRA_LONGITUDE, selected?.metadata?.longitude)
+                            intent.putExtra(ImageViewerActivity.EXTRA_TEMPERATURE, selected?.metadata?.temperature)
+                            intent.putExtra(ImageViewerActivity.EXTRA_HUMIDITY, selected?.metadata?.humidity)
+                            intent.putExtra(ImageViewerActivity.EXTRA_PRESSURE, selected?.metadata?.pressure)
+                            intent.putExtra(ImageViewerActivity.EXTRA_FILENAMES, filenames)
+                            intent.putExtra(ImageViewerActivity.EXTRA_INDEX, selectedIndex)
+                            intent.putExtra(ImageViewerActivity.EXTRA_LATITUDES, latitudes)
+                            intent.putExtra(ImageViewerActivity.EXTRA_LONGITUDES, longitudes)
+                            intent.putExtra(ImageViewerActivity.EXTRA_TEMPERATURES, temperatures)
+                            intent.putExtra(ImageViewerActivity.EXTRA_HUMIDITIES, humidities)
+                            intent.putExtra(ImageViewerActivity.EXTRA_PRESSURES, pressures)
+                            startActivity(intent)
+                        },
+                        onGalleryDeleteClick = { pendingDelete = it }
+                    )
+                } else {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background
                 ) { innerPadding ->
                     Box(
                         modifier = Modifier
@@ -311,24 +399,12 @@ class MainActivity : ComponentActivity() {
                                                 ) {
                                                     Text("System")
                                                 }
-                                                FilledTonalButton(
-                                                    onClick = {
-                                                        val intent = Intent(this@MainActivity, GalleryActivity::class.java)
-                                                        intent.putExtra(GalleryActivity.EXTRA_BASE_URL, ui.baseUrl)
-                                                        startActivity(intent)
-                                                    },
-                                                    enabled = !ui.busy,
-                                                    shape = compactShape,
-                                                    contentPadding = compactBtnPadding
-                                                ) {
-                                                    Text("Gallery")
-                                                }
                                             }
                                             Card(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 shape = compactShape,
                                                 colors = CardDefaults.cardColors(
-                                                    containerColor = if (ui.autoCaptureRpiRunning == true || ui.autoCaptureEspRunning == true) Color(0xFFE6F4EA) else Color(0xFFF7F8E8)
+                                                    containerColor = if (ui.autoCaptureRpiRunning == true || ui.autoCaptureEspRunning == true) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant
                                                 )
                                             ) {
                                                 Text(
@@ -384,7 +460,6 @@ class MainActivity : ComponentActivity() {
                                             ) {
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text("Items: ${ui.imagesTotalItems}  |  Page: ${ui.imagesPage}/${ui.imagesTotalPages}")
-                                                    Text("Latest: ${ui.images.firstOrNull()?.filename ?: "n/a"}")
                                                 }
                                                 Spacer(Modifier.width(8.dp))
                                                 FilledTonalButton(
@@ -397,7 +472,7 @@ class MainActivity : ComponentActivity() {
                                                     shape = compactShape,
                                                     contentPadding = compactBtnPadding
                                                 ) {
-                                                    Text("Open Full Gallery")
+                                                    Text("Open")
                                                 }
                                             }
                                         }
@@ -415,13 +490,14 @@ class MainActivity : ComponentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(Color(0x44000000)),
+                                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.25f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 CircularProgressIndicator()
                             }
                         }
                     }
+                }
                 }
 
                 val viewerModel: Any? = ui.viewerImageBytes ?: ui.viewerImageUrl
@@ -491,49 +567,455 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 pendingDelete?.let { filename ->
-                    AlertDialog(
-                        onDismissRequest = { pendingDelete = null },
-                        title = { Text("Delete image?") },
-                        text = { Text("Are you sure you want to delete $filename?") },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    vm.deleteImage(filename) { ui = it }
-                                    pendingDelete = null
-                                },
-                                enabled = !ui.busy
-                            ) { Text("Delete") }
+                    AppConfirmDialog(
+                        title = "Delete image?",
+                        message = "Are you sure you want to delete $filename?",
+                        confirmLabel = "Delete",
+                        destructive = true,
+                        busy = ui.busy,
+                        onConfirm = {
+                            vm.deleteImage(filename) { ui = it }
+                            pendingDelete = null
                         },
-                        dismissButton = {
-                            TextButton(onClick = { pendingDelete = null }, enabled = !ui.busy) {
-                                Text("Cancel")
-                            }
-                        }
+                        onDismiss = { pendingDelete = null }
                     )
                 }
                 if (showDeleteAllConfirm) {
-                    AlertDialog(
-                        onDismissRequest = { showDeleteAllConfirm = false },
-                        title = { Text("Delete all images?") },
-                        text = { Text("Are you sure you want to delete all gallery images, labels and json files?") },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    vm.deleteAllImages { ui = it }
-                                    showDeleteAllConfirm = false
-                                },
-                                enabled = !ui.busy
-                            ) { Text("Delete All") }
+                    AppConfirmDialog(
+                        title = "Delete all images?",
+                        message = "Are you sure you want to delete all gallery images, labels and json files?",
+                        confirmLabel = "Delete all",
+                        destructive = true,
+                        busy = ui.busy,
+                        onConfirm = {
+                            vm.deleteAllImages { ui = it }
+                            showDeleteAllConfirm = false
                         },
-                        dismissButton = {
-                            TextButton(onClick = { showDeleteAllConfirm = false }, enabled = !ui.busy) {
-                                Text("Cancel")
-                            }
-                        }
+                        onDismiss = { showDeleteAllConfirm = false }
                     )
                 }
             }
         }
+    }
+}
+
+private enum class PhoneTab(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    Home("Home", Icons.Default.Home),
+    Capture("Capture", Icons.Default.Settings),
+    Gallery("Gallery", Icons.Default.Info),
+    System("System", Icons.Default.Build),
+    Log("Log", Icons.Default.List),
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@androidx.compose.runtime.Composable
+private fun PhoneMainScaffold(
+    ui: MainUiState,
+    compactShape: RoundedCornerShape,
+    compactBtnPadding: PaddingValues,
+    logEntries: List<String>,
+    onDiscover: () -> Unit,
+    onSetWifi: () -> Unit,
+    onSetAp: () -> Unit,
+    onSelectRpiHost: (String) -> Unit,
+    onSelectEspHost: (String) -> Unit,
+    onSetCaptureSource: (String) -> Unit,
+    onSetCaptureInterval: (Int) -> Unit,
+    onShot: (String) -> Unit,
+    onStartAuto: (String, Int) -> Unit,
+    onStopAuto: (String) -> Unit,
+    onRestartServer: () -> Unit,
+    onRebootSystem: () -> Unit,
+    onPoweroffSystem: () -> Unit,
+    onGalleryRefresh: () -> Unit,
+    onGalleryPrev: () -> Unit,
+    onGalleryNext: () -> Unit,
+    onGalleryImageClick: (String) -> Unit,
+    onGalleryDeleteClick: (String) -> Unit
+) {
+    var tab by remember { mutableStateOf(PhoneTab.Home) }
+    var systemConfirmAction by remember { mutableStateOf<String?>(null) }
+    val anyAutoRunning = (ui.autoCaptureRpiRunning == true) || (ui.autoCaptureEspRunning == true)
+    val selectedSource = ui.selectedAutoCaptureSource
+    val selectedInterval = ui.selectedAutoCaptureIntervalSeconds
+    val selectedRunning = when (selectedSource) {
+        "esp" -> ui.autoCaptureEspRunning == true
+        "both" -> anyAutoRunning
+        else -> ui.autoCaptureRpiRunning == true
+    }
+    val intervalOptions = listOf(30, 60, 120, 180, 300)
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            NavigationBar {
+                PhoneTab.entries.forEach { entry ->
+                    NavigationBarItem(
+                        selected = tab == entry,
+                        onClick = { tab = entry },
+                        icon = { Icon(entry.icon, contentDescription = entry.label) },
+                        label = { Text(entry.label) }
+                    )
+                }
+            }
+        }
+    ) { inner ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(inner)
+                .padding(8.dp)
+        ) {
+            when (tab) {
+                PhoneTab.Home -> {
+                    Card(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = compactShape,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("Connections", fontWeight = FontWeight.SemiBold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilledTonalButton(onClick = onDiscover, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) { Text("Discover") }
+                                FilledTonalButton(onClick = onSetWifi, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) { Text("WiFi") }
+                                FilledTonalButton(onClick = onSetAp, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) { Text("AP") }
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.horizontalScroll(rememberScrollState())
+                            ) {
+                                Text("RPi", fontWeight = FontWeight.SemiBold)
+                                if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
+                                    ui.discoveredRpiBaseUrls.take(3).forEach { host ->
+                                        HostChip(label = compactHostLabel(host), onClick = { onSelectRpiHost(host) })
+                                    }
+                                } else {
+                                    Text("n/a", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.horizontalScroll(rememberScrollState())
+                            ) {
+                                Text("ESP", fontWeight = FontWeight.SemiBold)
+                                if (ui.discoveredEspBaseUrls.isNotEmpty()) {
+                                    ui.discoveredEspBaseUrls.take(3).forEach { host ->
+                                        HostChip(label = compactHostLabel(host), onClick = { onSelectEspHost(host) })
+                                    }
+                                } else {
+                                    Text("n/a", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            InfoPanel(ui = ui, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+
+                PhoneTab.Capture -> {
+                    Card(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = compactShape,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("Capture", fontWeight = FontWeight.SemiBold)
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AssistChip(
+                                    onClick = { onSetCaptureSource("rpi") },
+                                    label = { Text(if (selectedSource == "rpi") "• RPi" else "RPi") }
+                                )
+                                AssistChip(
+                                    onClick = { onSetCaptureSource("esp") },
+                                    label = { Text(if (selectedSource == "esp") "• ESP" else "ESP") }
+                                )
+                                AssistChip(
+                                    onClick = { onSetCaptureSource("both") },
+                                    label = { Text(if (selectedSource == "both") "• Both" else "Both") }
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ElevatedButton(
+                                    onClick = { onShot(selectedSource) },
+                                    enabled = !ui.busy,
+                                    shape = compactShape,
+                                    contentPadding = compactBtnPadding
+                                ) { Text("Shot") }
+                                if (selectedRunning) {
+                                    FilledTonalButton(
+                                        onClick = { onStopAuto(selectedSource) },
+                                        enabled = !ui.busy,
+                                        shape = compactShape,
+                                        contentPadding = compactBtnPadding
+                                    ) { Text("Stop Auto") }
+                                } else {
+                                    FilledTonalButton(
+                                        onClick = { onStartAuto(selectedSource, selectedInterval) },
+                                        enabled = !ui.busy,
+                                        shape = compactShape,
+                                        contentPadding = compactBtnPadding
+                                    ) { Text("Start Auto") }
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                intervalOptions.forEach { sec ->
+                                    val label = when (sec) {
+                                        30 -> "30s"
+                                        60 -> "1m"
+                                        120 -> "2m"
+                                        180 -> "3m"
+                                        300 -> "5m"
+                                        else -> "${sec}s"
+                                    }
+                                    AssistChip(
+                                        onClick = { onSetCaptureInterval(sec) },
+                                        label = { Text(if (selectedInterval == sec) "• $label" else label) }
+                                    )
+                                }
+                            }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = compactShape,
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (anyAutoRunning) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                Text(
+                                    text = "Source: ${selectedSource.uppercase()} | Auto RPi: ${if (ui.autoCaptureRpiRunning == true) "running${ui.autoCaptureRpiIntervalSeconds?.let { " (${it}s)" } ?: ""}" else "stopped"} | Auto ESP: ${if (ui.autoCaptureEspRunning == true) "running${ui.autoCaptureEspIntervalSeconds?.let { " (${it}s)" } ?: ""}" else "stopped"}",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                PhoneTab.Gallery -> {
+                    Card(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = compactShape,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Gallery", fontWeight = FontWeight.SemiBold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Items: ${ui.imagesTotalItems}", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                                FilledTonalButton(
+                                    onClick = onGalleryPrev,
+                                    enabled = !ui.busy && ui.imagesPage > 1,
+                                    shape = compactShape,
+                                    contentPadding = compactBtnPadding
+                                ) { Text("Prev") }
+                                Text("${ui.imagesPage}/${ui.imagesTotalPages}")
+                                FilledTonalButton(
+                                    onClick = onGalleryNext,
+                                    enabled = !ui.busy && ui.imagesPage < ui.imagesTotalPages,
+                                    shape = compactShape,
+                                    contentPadding = compactBtnPadding
+                                ) { Text("Next") }
+                            }
+                            PhoneGalleryGrid(
+                                modifier = Modifier.weight(1f),
+                                baseUrl = ui.baseUrl,
+                                items = ui.images,
+                                refreshing = ui.busy,
+                                onRefresh = onGalleryRefresh,
+                                onImageClick = onGalleryImageClick,
+                                onDeleteClick = onGalleryDeleteClick
+                            )
+                        }
+                    }
+                }
+
+                PhoneTab.System -> {
+                    Card(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = compactShape,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("System", fontWeight = FontWeight.SemiBold)
+                            FilledTonalButton(
+                                onClick = onRestartServer,
+                                enabled = !ui.busy,
+                                shape = compactShape,
+                                contentPadding = compactBtnPadding
+                            ) { Text("Restart Server") }
+                            FilledTonalButton(
+                                onClick = { systemConfirmAction = "reboot" },
+                                enabled = !ui.busy,
+                                shape = compactShape,
+                                contentPadding = compactBtnPadding
+                            ) { Text("Reboot RPi") }
+                            FilledTonalButton(
+                                onClick = { systemConfirmAction = "poweroff" },
+                                enabled = !ui.busy,
+                                shape = compactShape,
+                                contentPadding = compactBtnPadding
+                            ) { Text("Power Off RPi") }
+                            if (systemConfirmAction != null) {
+                                val actionText = if (systemConfirmAction == "reboot") "Reboot Raspberry Pi?" else "Power off Raspberry Pi?"
+                                AppConfirmDialog(
+                                    title = "Confirm action",
+                                    message = actionText,
+                                    confirmLabel = "Confirm",
+                                    destructive = true,
+                                    busy = ui.busy,
+                                    onConfirm = {
+                                        if (systemConfirmAction == "reboot") onRebootSystem() else onPoweroffSystem()
+                                        systemConfirmAction = null
+                                    },
+                                    onDismiss = { systemConfirmAction = null }
+                                )
+                            }
+                            InfoPanel(ui = ui, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+
+                PhoneTab.Log -> {
+                    Card(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = compactShape,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Log", fontWeight = FontWeight.SemiBold)
+                            BottomLogPanel(
+                                modifier = Modifier.fillMaxSize(),
+                                entries = logEntries
+                            )
+                        }
+                    }
+                }
+            }
+            if (ui.busy) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.25f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+@OptIn(ExperimentalMaterialApi::class)
+private fun PhoneGalleryGrid(
+    modifier: Modifier,
+    baseUrl: String,
+    items: List<it.unipg.agriapp.data.ImageItem>,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
+    onImageClick: (String) -> Unit,
+    onDeleteClick: (String) -> Unit
+) {
+    val pullRefreshState = rememberPullRefreshState(
+        refreshing = refreshing,
+        onRefresh = onRefresh
+    )
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .pullRefresh(pullRefreshState)
+    ) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 160.dp),
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(items) { item ->
+                Card(
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(96.dp)
+                        ) {
+                            AsyncImage(
+                                model = buildThumbnailUrl(baseUrl, item.filename),
+                                contentDescription = item.filename,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clipToBounds()
+                                    .clickable { onImageClick(item.filename) },
+                                contentScale = ContentScale.Crop
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(999.dp))
+                                    .clickable { onDeleteClick(item.filename) }
+                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                            ) {
+                                Text("X", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Text(formatCompactDateTimeGrid(item.filename), maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        PullRefreshIndicator(
+            refreshing = refreshing,
+            state = pullRefreshState,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 }
 
@@ -583,7 +1065,7 @@ private fun StartAutoDialog(
         )
     }
     var selected by remember { mutableStateOf(initialIntervalSeconds) }
-    val options = listOf(60, 120, 180, 300, 600)
+    val options = listOf(30, 60, 120, 180, 300)
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -617,11 +1099,11 @@ private fun StartAutoDialog(
                 ) {
                     options.forEach { sec ->
                         val label = when (sec) {
+                            30 -> "30s"
                             60 -> "1 min"
                             120 -> "2 min"
                             180 -> "3 min"
                             300 -> "5 min"
-                            600 -> "10 min"
                             else -> "${sec}s"
                         }
                         AssistChip(
@@ -718,27 +1200,66 @@ private fun SystemActionsDialog(
         } else {
             "Are you sure? Raspberry Pi will be powered off."
         }
-        AlertDialog(
-            onDismissRequest = { confirmAction = null },
-            title = { Text(title) },
-            text = { Text(msg) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (action == "reboot") onReboot() else onPoweroff()
-                        confirmAction = null
-                    },
-                    enabled = !busy
-                ) {
-                    Text("Yes")
-                }
+        AppConfirmDialog(
+            title = title,
+            message = msg,
+            confirmLabel = "Confirm",
+            destructive = true,
+            busy = busy,
+            onConfirm = {
+                if (action == "reboot") onReboot() else onPoweroff()
+                confirmAction = null
             },
-            dismissButton = {
-                TextButton(onClick = { confirmAction = null }, enabled = !busy) {
-                    Text("No")
+            onDismiss = { confirmAction = null }
+        )
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun AppConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String = "Confirm",
+    destructive: Boolean = false,
+    busy: Boolean = false,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(
+                        onClick = onDismiss,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("Cancel") }
+                    Button(
+                        onClick = onConfirm,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = if (destructive) {
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError
+                            )
+                        } else ButtonDefaults.buttonColors()
+                    ) { Text(confirmLabel) }
                 }
             }
-        )
+        }
     }
 }
 
@@ -771,8 +1292,8 @@ private fun InfoPanel(
 
 @androidx.compose.runtime.Composable
 private fun StatusBadge(label: String, ok: Boolean) {
-    val bg = if (ok) Color(0xFFE4F4E8) else Color(0xFFFFF0E0)
-    val fg = if (ok) Color(0xFF1D5F2A) else Color(0xFF8A3A00)
+    val bg = if (ok) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer
+    val fg = if (ok) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onErrorContainer
     Box(
         modifier = Modifier
             .background(bg, RoundedCornerShape(999.dp))
@@ -829,6 +1350,8 @@ private fun BottomLogPanel(
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
                     .padding(4.dp)
             ) {
+                val trackColor = MaterialTheme.colorScheme.outlineVariant
+                val thumbColor = MaterialTheme.colorScheme.primary
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -849,9 +1372,6 @@ private fun BottomLogPanel(
                     val total = entries.size.coerceAtLeast(1)
                     val visible = listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
                     val first = listState.firstVisibleItemIndex.coerceAtLeast(0)
-
-                    val trackColor = Color(0xFFC7D6C3)
-                    val thumbColor = Color(0xFF5E7F58)
 
                     drawRoundRect(
                         color = trackColor,
@@ -899,6 +1419,8 @@ private fun ImageList(
             .fillMaxWidth()
             .pullRefresh(pullRefreshState)
     ) {
+        val trackColor = MaterialTheme.colorScheme.outlineVariant
+        val thumbColor = MaterialTheme.colorScheme.primary
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 modifier = Modifier
@@ -958,9 +1480,6 @@ private fun ImageList(
                 val visible = listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
                 val first = listState.firstVisibleItemIndex.coerceAtLeast(0)
 
-                val trackColor = Color(0xFFCFDAC8)
-                val thumbColor = Color(0xFF6F8E6A)
-
                 drawRoundRect(
                     color = trackColor,
                     topLeft = Offset(0f, 0f),
@@ -1012,6 +1531,38 @@ private fun formatResolution(width: Int?, height: Int?): String {
     val w = width ?: 0
     val h = height ?: 0
     return if (w > 0 && h > 0) "${w}x${h}" else "-"
+}
+
+private fun formatCompactDateTime(filename: String): String {
+    val stamp = filename.substringAfter('_', "").substringBefore('.')
+    if (stamp.length != 15 || stamp[8] != '-') return filename
+    return try {
+        val inFmt = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+        val date = inFmt.parse(stamp) ?: return filename
+        val outFmt = java.text.SimpleDateFormat("d MMM yyyy HH:mm:ss", java.util.Locale.getDefault())
+        outFmt.format(java.util.Date(date.time))
+    } catch (_: Exception) {
+        filename
+    }
+}
+
+private fun formatCompactDateTimeGrid(filename: String): String {
+    val source = when {
+        filename.lowercase().startsWith("rpi_") -> "RPi"
+        filename.lowercase().startsWith("esp_") -> "ESP"
+        else -> "Image"
+    }
+    val stamp = filename.substringAfter('_', "").substringBefore('.')
+    if (stamp.length != 15 || stamp[8] != '-') return filename
+    return try {
+        val inFmt = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+        val date = inFmt.parse(stamp) ?: return filename
+        val outDate = java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault())
+        val outTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+        "$source ${outDate.format(date)}\n${outTime.format(date)}"
+    } catch (_: Exception) {
+        filename
+    }
 }
 
 private fun formatGps(latitude: Double?, longitude: Double?): String {

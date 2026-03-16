@@ -21,6 +21,9 @@
         <activity
             android:name=".GalleryActivity"
             android:exported="false" />
+        <activity
+            android:name=".ImageViewerActivity"
+            android:exported="false" />
     </application>
 
 </manifest>
