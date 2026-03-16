@@ -77,7 +77,8 @@ data class ImagesResponse(
 )
 
 data class NetworkModeRequest(
-    val mode: String
+    val mode: String,
+    val wifi_connection: String? = null
 )
 
 data class NetworkModeResponse(

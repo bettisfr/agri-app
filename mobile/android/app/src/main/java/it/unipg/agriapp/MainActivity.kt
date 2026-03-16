@@ -229,6 +229,11 @@ class MainActivity : ComponentActivity() {
                             vm.setPreferredWifiConnection(wifiName)
                             ui = vm.state
                         },
+                        onConnectPreferredWifi = { wifiName ->
+                            vm.setPreferredWifiConnection(wifiName)
+                            ui = vm.state
+                            vm.setNetworkMode("wifi_only") { ui = it }
+                        },
                         onRestartServer = { vm.restartServer { ui = it } },
                         onRebootSystem = { vm.rebootRpi { ui = it } },
                         onPoweroffSystem = { vm.poweroffRpi { ui = it } },
@@ -634,6 +639,7 @@ private fun PhoneMainScaffold(
     onStartAuto: (String, Int) -> Unit,
     onStopAuto: (String) -> Unit,
     onSetPreferredWifi: (String) -> Unit,
+    onConnectPreferredWifi: (String) -> Unit,
     onRestartServer: () -> Unit,
     onRebootSystem: () -> Unit,
     onPoweroffSystem: () -> Unit,
@@ -696,6 +702,12 @@ private fun PhoneMainScaffold(
                                 FilledTonalButton(onClick = onSetWifi, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) { Text("WiFi") }
                                 FilledTonalButton(onClick = onSetAp, enabled = !ui.busy, shape = compactShape, contentPadding = compactBtnPadding) { Text("AP") }
                             }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                val apOn = ui.network?.ap_active == true
+                                val clientOn = ui.network?.client_active == true
+                                StatusBadge("AP ${if (apOn) "ON" else "OFF"}", ok = apOn)
+                                StatusBadge("WiFi ${if (clientOn) "ON" else "OFF"}", ok = clientOn)
+                            }
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -710,6 +722,11 @@ private fun PhoneMainScaffold(
                                     Text("n/a", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
+                            Text(
+                                "RPi: last seen ${ui.rpiLastSeenTs?.let(::formatRelativeTs) ?: "never"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -724,7 +741,11 @@ private fun PhoneMainScaffold(
                                     Text("n/a", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            InfoPanel(ui = ui, modifier = Modifier.fillMaxWidth())
+                            Text(
+                                "ESP: last seen ${ui.espLastSeenTs?.let(::formatRelativeTs) ?: "never"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -888,48 +909,120 @@ private fun PhoneMainScaffold(
                         ) {
                             Text("System", fontWeight = FontWeight.SemiBold)
                             val activeClientConn = ui.network?.active_wifi_connections?.firstOrNull { it != ui.network?.ap_connection }
-                            Text(
-                                text = "Current WiFi: ${activeClientConn ?: "n/a"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "Preferred WiFi: ${ui.preferredWifiConnection ?: "n/a"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            if (ui.knownWifiConnections.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = compactShape,
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    ui.knownWifiConnections.forEach { wifi ->
-                                        AssistChip(
-                                            onClick = { onSetPreferredWifi(wifi) },
-                                            label = { Text(if (ui.preferredWifiConnection == wifi) "• $wifi" else wifi) }
-                                        )
+                                    val freeMb = ui.system?.disk_free_bytes?.div(1024 * 1024) ?: 0
+                                    Text("Storage", fontWeight = FontWeight.SemiBold)
+                                    Text("Free: ${freeMb} MB", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = compactShape,
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("WiFi", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = "Current: ${activeClientConn ?: "n/a"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Preferred: ${ui.preferredWifiConnection ?: "n/a"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (ui.knownWifiConnections.isNotEmpty()) {
+                                        val wifiSorted = sortWifiProfilesForUi(ui.knownWifiConnections)
+                                        Row(
+                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            wifiSorted.forEach { wifi ->
+                                                AssistChip(
+                                                    onClick = { onSetPreferredWifi(wifi) },
+                                                    label = { Text(if (ui.preferredWifiConnection == wifi) "• $wifi" else wifi) }
+                                                )
+                                            }
+                                        }
+                                        FilledTonalButton(
+                                            onClick = {
+                                                val target = ui.preferredWifiConnection ?: ui.knownWifiConnections.firstOrNull()
+                                                if (!target.isNullOrBlank()) {
+                                                    onConnectPreferredWifi(target)
+                                                }
+                                            },
+                                            enabled = !ui.busy && (ui.preferredWifiConnection != null || ui.knownWifiConnections.isNotEmpty()),
+                                            shape = compactShape,
+                                            contentPadding = compactBtnPadding
+                                        ) {
+                                            Text("Connect now")
+                                        }
                                     }
                                 }
                             }
-                            FilledTonalButton(
-                                onClick = onRestartServer,
-                                enabled = !ui.busy,
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
                                 shape = compactShape,
-                                contentPadding = compactBtnPadding
-                            ) { Text("Restart Server") }
-                            FilledTonalButton(
-                                onClick = { systemConfirmAction = "reboot" },
-                                enabled = !ui.busy,
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("Server", fontWeight = FontWeight.SemiBold)
+                                    FilledTonalButton(
+                                        onClick = onRestartServer,
+                                        enabled = !ui.busy,
+                                        shape = compactShape,
+                                        contentPadding = compactBtnPadding
+                                    ) { Text("Restart Server") }
+                                }
+                            }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
                                 shape = compactShape,
-                                contentPadding = compactBtnPadding
-                            ) { Text("Reboot RPi") }
-                            FilledTonalButton(
-                                onClick = { systemConfirmAction = "poweroff" },
-                                enabled = !ui.busy,
-                                shape = compactShape,
-                                contentPadding = compactBtnPadding
-                            ) { Text("Power Off RPi") }
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("Power", fontWeight = FontWeight.SemiBold)
+                                    FilledTonalButton(
+                                        onClick = { systemConfirmAction = "reboot" },
+                                        enabled = !ui.busy,
+                                        shape = compactShape,
+                                        contentPadding = compactBtnPadding
+                                    ) { Text("Reboot RPi") }
+                                    FilledTonalButton(
+                                        onClick = { systemConfirmAction = "poweroff" },
+                                        enabled = !ui.busy,
+                                        shape = compactShape,
+                                        contentPadding = compactBtnPadding
+                                    ) { Text("Power Off RPi") }
+                                }
+                            }
                             if (systemConfirmAction != null) {
                                 val actionText = if (systemConfirmAction == "reboot") "Reboot Raspberry Pi?" else "Power off Raspberry Pi?"
                                 AppConfirmDialog(
@@ -945,7 +1038,6 @@ private fun PhoneMainScaffold(
                                     onDismiss = { systemConfirmAction = null }
                                 )
                             }
-                            InfoPanel(ui = ui, modifier = Modifier.fillMaxWidth())
                         }
                     }
                 }
@@ -1346,6 +1438,24 @@ private fun HostChip(
     ) {
         Text(label, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+private fun formatRelativeTs(tsMs: Long): String {
+    val delta = (System.currentTimeMillis() - tsMs).coerceAtLeast(0L) / 1000L
+    return when {
+        delta < 5 -> "just now"
+        delta < 60 -> "${delta}s ago"
+        delta < 3600 -> "${delta / 60}m ago"
+        else -> "${delta / 3600}h ago"
+    }
+}
+
+private fun sortWifiProfilesForUi(items: List<String>): List<String> {
+    val preferredOrder = listOf("preconfigured", "castelnuovo", "hotspot")
+    val unique = items.distinct()
+    val mapped = preferredOrder.filter { unique.contains(it) }
+    val others = unique.filterNot { preferredOrder.contains(it) }.sorted()
+    return mapped + others
 }
 
 private fun compactHostLabel(raw: String): String {

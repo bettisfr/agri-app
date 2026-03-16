@@ -22,6 +22,8 @@ The backend server is managed by \texttt{systemctl --user}. In routine maintenan
 
 Operational safety remains important: reboot and poweroff are destructive from an availability perspective and should be used with explicit user confirmation and contextual logging.
 
+On the Android side, these operations are grouped in the \texttt{System} tab using separate cards (\texttt{Storage}, \texttt{WiFi}, \texttt{Server}, \texttt{Power}). This reduces operator error by preventing accidental confusion between informational state (free storage), network-switch actions, and destructive power controls.
+
 \subsection{Capture Operations}
 Capture management now has two complementary modes:
 \begin{itemize}
@@ -29,7 +31,7 @@ Capture management now has two complementary modes:
   \item unattended loop capture controlled by \texttt{/api/v1/capture/loop/*} (RPi) and \texttt{/api/v1/capture/esp/loop/*} (ESP).
 \end{itemize}
 
-For unattended operation, interval selection is an operational parameter (e.g., 1--10 minute presets in tablet UI or explicit API payloads). Start/stop semantics are explicit; operators should always verify loop status after transitions. In the Android control app, operators can start loops for \texttt{RPi}, \texttt{ESP}, or \texttt{Both}, while status remains source-specific.
+For unattended operation, interval selection is an operational parameter (e.g., 30s and minute-scale presets in mobile UI or explicit API payloads). Start/stop semantics are explicit; operators should always verify loop status after transitions. In the Android control app, operators can start loops for \texttt{RPi}, \texttt{ESP}, or \texttt{Both}, while status remains source-specific.
 Current ESP unattended operation is implemented through the same ESP proxy capture API used for one-shot, so metadata persistence behavior remains aligned between manual and automatic captures.
 
 \subsection{Metadata Operations (GPS/BME280)}
@@ -54,6 +56,10 @@ AgriApp is operated across heterogeneous network contexts. In infrastructure Wi-
 
 Mode switching must be followed by a brief verification phase (reachability, status endpoint, shot action) before proceeding with high-value operations. This small discipline prevents silent mode drift during field sessions.
 In current tablet operation, a delayed automatic discovery pass is triggered after Wi-Fi/AP mode changes, reducing the need for repeated manual discovery taps during subnet transitions.
+
+Operational UI now exposes AP/Wi-Fi ON/OFF badges in the \texttt{Connections} tab and ``last seen'' timestamps for both RPi and ESP endpoints. This gives fast visual feedback about connectivity recency without adding verbose controls.
+
+For Wi-Fi profile handling, operators can select a known profile and trigger \texttt{Connect now} directly from the \texttt{System/WiFi} card. This action maps to backend network-mode switching with preferred profile selection and is intended for controlled transitions between preconfigured environments.
 
 \subsection{Incident Response}
 A practical incident playbook is:

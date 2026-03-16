@@ -352,7 +352,7 @@ def image_dimensions_for_image(filename: str) -> tuple[int, int]:
     return 0, 0
 
 
-def run_network_mode_script(args_list):
+def run_network_mode_script(args_list, extra_env: dict | None = None):
     """
     Run network mode helper script and parse JSON output.
     """
@@ -360,10 +360,17 @@ def run_network_mode_script(args_list):
         return {"status": "error", "message": "network mode script not found"}, 500
 
     cmd = ["bash", NETWORK_MODE_SCRIPT] + args_list
+    env = os.environ.copy()
+    if isinstance(extra_env, dict):
+        for k, v in extra_env.items():
+            if v is None:
+                continue
+            env[str(k)] = str(v)
     try:
         proc = subprocess.run(
             cmd,
             cwd=os.path.dirname(__file__),
+            env=env,
             capture_output=True,
             text=True,
             timeout=40,
@@ -1038,7 +1045,7 @@ def api_system_server_restart():
 def api_network_mode():
     """
     GET  -> current network mode/status.
-    POST -> set network mode. JSON body: { "mode": "wifi_only|ap_only|hybrid_debug" }.
+    POST -> set network mode. JSON body: { "mode": "wifi_only|ap_only|hybrid_debug", "wifi_connection": "<optional profile name>" }.
     """
     if request.method == "GET":
         payload, status_code = run_network_mode_script(["--status"])
@@ -1046,12 +1053,18 @@ def api_network_mode():
 
     data = request.get_json(silent=True) or {}
     mode = str(data.get("mode", "")).strip().lower()
+    wifi_connection = str(data.get("wifi_connection", "")).strip()
     if mode not in ("wifi_only", "ap_only", "hybrid_debug"):
         return jsonify({"status": "error", "message": "invalid mode"}), 400
 
-    payload, status_code = run_network_mode_script(["--set", mode])
+    extra_env = {}
+    if wifi_connection:
+        extra_env["WIFI_CLIENT_CONN"] = wifi_connection
+    payload, status_code = run_network_mode_script(["--set", mode], extra_env=extra_env)
     if status_code == 200 and isinstance(payload, dict):
         payload["applied_mode"] = mode
+        if wifi_connection:
+            payload["requested_wifi_connection"] = wifi_connection
     return jsonify(payload), status_code
 
 

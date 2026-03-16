@@ -3,6 +3,7 @@ package it.unipg.agriapp.ui
 import android.app.Application
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.net.wifi.WifiManager
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -57,6 +58,15 @@ data class MainUiState(
     val selectedImageFilename: String? = null,
     val discoveredRpiBaseUrls: List<String> = emptyList(),
     val discoveredEspBaseUrls: List<String> = emptyList(),
+    val rpiLatencyMs: Long? = null,
+    val espLatencyMs: Long? = null,
+    val rpiLastSeenTs: Long? = null,
+    val espLastSeenTs: Long? = null,
+    val localSsid: String? = null,
+    val localSubnetPrefix: String? = null,
+    val localIp: String? = null,
+    val knownWifiConnections: List<String> = emptyList(),
+    val preferredWifiConnection: String? = null,
     val selectedEspBaseUrl: String? = null,
     val viewerImageUrl: String? = null,
     val viewerImageBytes: ByteArray? = null,
@@ -80,12 +90,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("agriapp_hosts", Context.MODE_PRIVATE)
     private val prefRpiHosts = "rpi_hosts"
     private val prefEspHosts = "esp_hosts"
+    private val prefWifiProfiles = "wifi_profiles"
+    private val prefPreferredWifi = "preferred_wifi"
+    private val defaultWifiProfiles = listOf("preconfigured", "hotspot", "castelnuovo")
     private var lastKnownNewestFilename: String? = null
     private var lastAutoRpiRunning: Boolean? = null
     private var lastAutoEspRunning: Boolean? = null
     private var lastAutoStopRequestedAtMs: Long = 0L
     var state: MainUiState = MainUiState()
         private set
+
+    init {
+        val known = mergeRecent(loadHosts(prefWifiProfiles), defaultWifiProfiles)
+        val preferred = prefs.getString(prefPreferredWifi, null)?.trim()?.ifBlank { null }
+        state = state.copy(
+            knownWifiConnections = known,
+            preferredWifiConnection = preferred ?: known.firstOrNull()
+        )
+        saveHosts(prefWifiProfiles, known)
+        refreshLocalNetworkInfo()
+    }
 
     fun updateBaseUrl(value: String) {
         val normalized = normalizeBase(value, withPort5000 = true)
@@ -95,6 +119,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             log = if (old == normalized) "Host selected: ${normalized.removePrefix("http://")}" else "Host changed: ${old.removePrefix("http://")} -> ${normalized.removePrefix("http://")}"
         )
         rememberRpiHost(normalized)
+    }
+
+    fun note(message: String) {
+        state = state.copy(log = message)
     }
 
     fun checkHealth(onState: (MainUiState) -> Unit) = runCall(onState) {
@@ -115,12 +143,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         rememberRpiHost(state.baseUrl)
         val ap = if (res.ap_active) "AP on" else "AP off"
         val wifi = if (res.client_active) "WiFi on" else "WiFi off"
+        val activeClientConn = res.active_wifi_connections.firstOrNull { it != res.ap_connection }
+        val mergedWifi = mergeRecent(
+            listOfNotNull(state.preferredWifiConnection, activeClientConn, res.wifi_connection),
+            state.knownWifiConnections
+        )
+        val preferred = state.preferredWifiConnection ?: activeClientConn ?: res.wifi_connection ?: mergedWifi.firstOrNull()
+        saveHosts(prefWifiProfiles, mergedWifi)
+        if (!preferred.isNullOrBlank()) {
+            prefs.edit().putString(prefPreferredWifi, preferred).apply()
+        }
         state = state.copy(network = res, connectedHost = state.baseUrl, log = "Network ${res.mode} ($ap, $wifi)")
+            .copy(
+                knownWifiConnections = mergedWifi,
+                preferredWifiConnection = preferred
+            )
     }
 
     fun refreshSystemAndNetworkSilently(onState: (MainUiState) -> Unit) {
         viewModelScope.launch {
             try {
+                refreshLocalNetworkInfo()
                 val sys = api().systemStatus()
                 val net = api().networkMode()
                 rememberRpiHost(state.baseUrl)
@@ -128,6 +171,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     system = sys,
                     network = net,
                     connectedHost = state.baseUrl
+                )
+                val activeClientConn = net.active_wifi_connections.firstOrNull { it != net.ap_connection }
+                val mergedWifi = mergeRecent(
+                    listOfNotNull(state.preferredWifiConnection, activeClientConn, net.wifi_connection),
+                    state.knownWifiConnections
+                )
+                val preferred = state.preferredWifiConnection ?: activeClientConn ?: net.wifi_connection ?: mergedWifi.firstOrNull()
+                saveHosts(prefWifiProfiles, mergedWifi)
+                if (!preferred.isNullOrBlank()) {
+                    prefs.edit().putString(prefPreferredWifi, preferred).apply()
+                }
+                state = state.copy(
+                    knownWifiConnections = mergedWifi,
+                    preferredWifiConnection = preferred
                 )
             } catch (_: Exception) {
                 // Best-effort silent refresh.
@@ -145,7 +202,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         state = state.copy(log = "Switching network mode to ${mode}...")
         try {
-            val res = api().setNetworkMode(NetworkModeRequest(mode))
+            val req = if (mode == "wifi_only") {
+                NetworkModeRequest(mode = mode, wifi_connection = state.preferredWifiConnection)
+            } else {
+                NetworkModeRequest(mode = mode)
+            }
+            val res = api().setNetworkMode(req)
             state = state.copy(
                 baseUrl = expectedBase,
                 network = res,
@@ -450,13 +512,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {
             null
         }
+        val inferredSource = when {
+            rpiRes.running && espRes?.running == true -> "both"
+            espRes?.running == true -> "esp"
+            else -> "rpi"
+        }
+        val inferredInterval = when (inferredSource) {
+            "esp" -> espRes?.interval_seconds
+            "both" -> rpiRes.interval_seconds ?: espRes?.interval_seconds
+            else -> rpiRes.interval_seconds
+        } ?: state.selectedAutoCaptureIntervalSeconds
         state = state.copy(
             autoCaptureRpiRunning = rpiRes.running,
             autoCaptureRpiIntervalSeconds = rpiRes.interval_seconds,
             autoCaptureRpiStartedAtTs = if (rpiRes.running) rpiRes.started_at_ts else null,
             autoCaptureEspRunning = espRes?.running,
             autoCaptureEspIntervalSeconds = espRes?.interval_seconds,
-            autoCaptureEspStartedAtTs = if (espRes?.running == true) espRes.started_at_ts else null
+            autoCaptureEspStartedAtTs = if (espRes?.running == true) espRes.started_at_ts else null,
+            selectedAutoCaptureSource = inferredSource,
+            selectedAutoCaptureIntervalSeconds = inferredInterval
         )
 
         val stopWasExpected = (System.currentTimeMillis() - lastAutoStopRequestedAtMs) < 20_000
@@ -485,13 +559,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (_: Exception) {
                     null
                 }
+                val inferredSource = when {
+                    rpiRes.running && espRes?.running == true -> "both"
+                    espRes?.running == true -> "esp"
+                    else -> "rpi"
+                }
+                val inferredInterval = when (inferredSource) {
+                    "esp" -> espRes?.interval_seconds
+                    "both" -> rpiRes.interval_seconds ?: espRes?.interval_seconds
+                    else -> rpiRes.interval_seconds
+                } ?: state.selectedAutoCaptureIntervalSeconds
                 state = state.copy(
                     autoCaptureRpiRunning = rpiRes.running,
                     autoCaptureRpiIntervalSeconds = rpiRes.interval_seconds,
                     autoCaptureRpiStartedAtTs = if (rpiRes.running) rpiRes.started_at_ts else null,
                     autoCaptureEspRunning = espRes?.running,
                     autoCaptureEspIntervalSeconds = espRes?.interval_seconds,
-                    autoCaptureEspStartedAtTs = if (espRes?.running == true) espRes.started_at_ts else null
+                    autoCaptureEspStartedAtTs = if (espRes?.running == true) espRes.started_at_ts else null,
+                    selectedAutoCaptureSource = inferredSource,
+                    selectedAutoCaptureIntervalSeconds = inferredInterval
                 )
 
                 val stopWasExpected = (System.currentTimeMillis() - lastAutoStopRequestedAtMs) < 20_000
@@ -548,6 +634,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         state = if (espResult.jpegBytes != null) {
             Log.i(logTag, "OneShot ESP success bytes=${espResult.jpegBytes.size}")
+            val now = System.currentTimeMillis()
             val imagesRes = api().images(page = 1, pageSize = state.imagesPageSize)
             val latest = espResult.savedFilename ?: imagesRes.items.firstOrNull()?.filename
             val capturedItem = imagesRes.items.firstOrNull { it.filename == latest } ?: imagesRes.items.firstOrNull()
@@ -556,6 +643,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val lowQxga = decodeImageDimensions(espResult.jpegBytes)?.let { it.first < 2048 || it.second < 1536 } ?: false
             state.copy(
                 selectedEspBaseUrl = espBase,
+                espLastSeenTs = now,
                 viewerImageUrl = null,
                 viewerImageBytes = null,
                 viewerTitle = null,
@@ -641,7 +729,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         rememberEspHost(normalized)
     }
 
+    fun setPreferredWifiConnection(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val merged = mergeRecent(listOf(trimmed), state.knownWifiConnections)
+        saveHosts(prefWifiProfiles, merged)
+        prefs.edit().putString(prefPreferredWifi, trimmed).apply()
+        state = state.copy(
+            knownWifiConnections = merged,
+            preferredWifiConnection = trimmed,
+            log = "Preferred WiFi set: $trimmed"
+        )
+    }
+
     fun discoverLan(onState: (MainUiState) -> Unit) = runCall(onState) {
+        refreshLocalNetworkInfo()
         val detectedPrefix = detectCurrentLanPrefix()
         val subnetPrefix = extractSubnetPrefix(state.baseUrl)
         val targetPrefix = detectedPrefix ?: when (state.network?.mode) {
@@ -756,15 +858,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val oldBase = state.baseUrl
         val updatedBase = foundRpi.firstOrNull() ?: state.baseUrl
+        val now = System.currentTimeMillis()
+        val rpiLatency = probeAgriAppLatency(updatedBase)
+        val selectedEsp = foundEspFinal.firstOrNull()
+        val espLatency = if (!selectedEsp.isNullOrBlank()) {
+            probeEspLatency(normalizeBase(selectedEsp, withPort5000 = false))
+        } else {
+            null
+        }
         state = state.copy(
             baseUrl = updatedBase,
             connectedHost = foundRpi.firstOrNull(),
             discoveredRpiBaseUrls = foundRpi,
             discoveredEspBaseUrls = foundEspFinal,
             selectedEspBaseUrl = foundEspFinal.firstOrNull(),
+            rpiLatencyMs = rpiLatency,
+            espLatencyMs = espLatency,
+            rpiLastSeenTs = if (foundRpi.isNotEmpty()) now else state.rpiLastSeenTs,
+            espLastSeenTs = if (foundEspFinal.isNotEmpty()) now else state.espLastSeenTs,
             autoDiscoverNeeded = false,
             log = "Discovery ${if (quickAnyFound) "quick" else "deep"} done: RPi=${foundRpi.size}, ESP=${foundEspFinal.size}, selected=${updatedBase.removePrefix("http://")}${if (updatedBase != oldBase) ", host changed" else ""}"
         )
+    }
+
+    fun testRpiConnection(onState: (MainUiState) -> Unit) = runCall(onState) {
+        val target = normalizeBase(state.baseUrl, withPort5000 = true)
+        val latency = probeAgriAppLatency(target)
+        val now = System.currentTimeMillis()
+        if (latency != null) {
+            state = state.copy(
+                rpiLatencyMs = latency,
+                rpiLastSeenTs = now,
+                log = "RPi test ok (${latency} ms)"
+            )
+        } else {
+            state = state.copy(
+                rpiLatencyMs = null,
+                log = "RPi test failed"
+            )
+        }
+    }
+
+    fun testEspConnection(onState: (MainUiState) -> Unit) = runCall(onState) {
+        val espBase = state.selectedEspBaseUrl
+        if (espBase.isNullOrBlank()) {
+            state = state.copy(log = "ESP not selected/found")
+            return@runCall
+        }
+        val target = normalizeBase(espBase, withPort5000 = false)
+        val latency = probeEspLatency(target)
+        val now = System.currentTimeMillis()
+        if (latency != null) {
+            state = state.copy(
+                espLatencyMs = latency,
+                espLastSeenTs = now,
+                log = "ESP test ok (${latency} ms)"
+            )
+        } else {
+            state = state.copy(
+                espLatencyMs = null,
+                log = "ESP test failed"
+            )
+        }
     }
 
     fun consumeAutoDiscoverRequest() {
@@ -860,6 +1015,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun refreshLocalNetworkInfo() {
+        val prefix = detectCurrentLanPrefix()
+        val ip = detectCurrentLocalIp()
+        val ssid = detectCurrentSsid()
+        state = state.copy(
+            localSubnetPrefix = prefix,
+            localIp = ip,
+            localSsid = ssid
+        )
+    }
+
+    private fun detectCurrentLocalIp(): String? {
+        return try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+            val preferred = interfaces
+                .filter { it.isUp && !it.isLoopback }
+                .sortedBy { iface ->
+                    when {
+                        iface.name.startsWith("wlan", ignoreCase = true) -> 0
+                        iface.name.startsWith("eth", ignoreCase = true) -> 1
+                        else -> 2
+                    }
+                }
+            preferred.forEach { iface ->
+                iface.inetAddresses.toList().forEach { address ->
+                    val ipv4 = address as? Inet4Address ?: return@forEach
+                    if (!ipv4.isSiteLocalAddress || ipv4.isLoopbackAddress) return@forEach
+                    val hostAddress = ipv4.hostAddress
+                    if (!hostAddress.isNullOrBlank()) return hostAddress
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun detectCurrentSsid(): String? {
+        return try {
+            val wm = getApplication<Application>().applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val raw = wm?.connectionInfo?.ssid ?: return null
+            val cleaned = raw.removePrefix("\"").removeSuffix("\"").trim()
+            if (cleaned.isBlank() || cleaned.equals("<unknown ssid>", ignoreCase = true)) null else cleaned
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun isAgriAppUp(base: String): Boolean {
         return try {
             val url = URL("$base/api/v1/health")
@@ -871,6 +1074,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             conn.responseCode == 200
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun probeAgriAppLatency(base: String): Long? {
+        return try {
+            val start = System.nanoTime()
+            val url = URL("$base/api/v1/health")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 1200
+                readTimeout = 1800
+            }
+            if (conn.responseCode == 200) {
+                ((System.nanoTime() - start) / 1_000_000L).coerceAtLeast(1L)
+            } else null
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -898,6 +1118,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             conn.responseCode == 200
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun probeEspLatency(base: String): Long? {
+        val statusMs = try {
+            val start = System.nanoTime()
+            val url = URL("$base/status")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 1500
+                readTimeout = 2200
+            }
+            if (conn.responseCode == 200) ((System.nanoTime() - start) / 1_000_000L).coerceAtLeast(1L) else null
+        } catch (_: Exception) {
+            null
+        }
+        if (statusMs != null) return statusMs
+
+        return try {
+            val start = System.nanoTime()
+            val url = URL("$base/capture")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 1800
+                readTimeout = 4500
+            }
+            if (conn.responseCode == 200) ((System.nanoTime() - start) / 1_000_000L).coerceAtLeast(1L) else null
+        } catch (_: Exception) {
+            null
         }
     }
 
