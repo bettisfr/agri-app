@@ -83,6 +83,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.isSystemInDarkTheme
 import it.unipg.agriapp.data.ImageMetadata
@@ -753,7 +754,7 @@ private fun PhoneMainScaffold(
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                ElevatedButton(
+                                FilledTonalButton(
                                     onClick = { onShot(selectedSource) },
                                     enabled = !ui.busy,
                                     shape = compactShape,
@@ -802,11 +803,14 @@ private fun PhoneMainScaffold(
                                     containerColor = if (anyAutoRunning) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant
                                 )
                             ) {
-                                Text(
-                                    text = "Source: ${selectedSource.uppercase()} | Auto RPi: ${if (ui.autoCaptureRpiRunning == true) "running${ui.autoCaptureRpiIntervalSeconds?.let { " (${it}s)" } ?: ""}" else "stopped"} | Auto ESP: ${if (ui.autoCaptureEspRunning == true) "running${ui.autoCaptureEspIntervalSeconds?.let { " (${it}s)" } ?: ""}" else "stopped"}",
+                                Column(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text("Source: ${selectedSource.uppercase()}", fontWeight = FontWeight.SemiBold)
+                                    Text("Auto RPi: ${if (ui.autoCaptureRpiRunning == true) "running${ui.autoCaptureRpiIntervalSeconds?.let { " (${it}s)" } ?: ""}" else "stopped"}", fontWeight = FontWeight.SemiBold)
+                                    Text("Auto ESP: ${if (ui.autoCaptureEspRunning == true) "running${ui.autoCaptureEspIntervalSeconds?.let { " (${it}s)" } ?: ""}" else "stopped"}", fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
@@ -1292,8 +1296,8 @@ private fun InfoPanel(
 
 @androidx.compose.runtime.Composable
 private fun StatusBadge(label: String, ok: Boolean) {
-    val bg = if (ok) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer
-    val fg = if (ok) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onErrorContainer
+    val bg = if (ok) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+    val fg = if (ok) Color(0xFF1B5E20) else Color(0xFF8D4E00)
     Box(
         modifier = Modifier
             .background(bg, RoundedCornerShape(999.dp))
