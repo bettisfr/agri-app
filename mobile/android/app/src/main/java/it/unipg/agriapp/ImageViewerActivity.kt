@@ -1,5 +1,6 @@
 package it.unipg.agriapp
 
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,6 +42,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,11 +69,17 @@ class ImageViewerActivity : ComponentActivity() {
         val temperatures = intent?.getDoubleArrayExtra(EXTRA_TEMPERATURES)
         val humidities = intent?.getDoubleArrayExtra(EXTRA_HUMIDITIES)
         val pressures = intent?.getDoubleArrayExtra(EXTRA_PRESSURES)
+        val fileSizes = intent?.getLongArrayExtra(EXTRA_FILE_SIZES)
+        val imageWidths = intent?.getIntArrayExtra(EXTRA_IMAGE_WIDTHS)
+        val imageHeights = intent?.getIntArrayExtra(EXTRA_IMAGE_HEIGHTS)
         val latitude = intent?.getDoubleExtra(EXTRA_LATITUDE, Double.NaN)?.takeIf { !it.isNaN() }
         val longitude = intent?.getDoubleExtra(EXTRA_LONGITUDE, Double.NaN)?.takeIf { !it.isNaN() }
         val temperature = intent?.getDoubleExtra(EXTRA_TEMPERATURE, Double.NaN)?.takeIf { !it.isNaN() }
         val humidity = intent?.getDoubleExtra(EXTRA_HUMIDITY, Double.NaN)?.takeIf { !it.isNaN() }
         val pressure = intent?.getDoubleExtra(EXTRA_PRESSURE, Double.NaN)?.takeIf { !it.isNaN() }
+        val fileSizeBytes = intent?.getLongExtra(EXTRA_FILE_SIZE_BYTES, 0L) ?: 0L
+        val imageWidth = intent?.getIntExtra(EXTRA_IMAGE_WIDTH, 0)?.takeIf { it > 0 }
+        val imageHeight = intent?.getIntExtra(EXTRA_IMAGE_HEIGHT, 0)?.takeIf { it > 0 }
 
         setContent {
             AgriAppTheme {
@@ -81,7 +89,10 @@ class ImageViewerActivity : ComponentActivity() {
                     val longitude: Double? = null,
                     val temperature: Double? = null,
                     val humidity: Double? = null,
-                    val pressure: Double? = null
+                    val pressure: Double? = null,
+                    val fileSizeBytes: Long = 0L,
+                    val imageWidth: Int? = null,
+                    val imageHeight: Int? = null
                 )
                 var scale by remember { mutableFloatStateOf(1f) }
                 var offsetX by remember { mutableFloatStateOf(0f) }
@@ -105,6 +116,9 @@ class ImageViewerActivity : ComponentActivity() {
                                     temperature = valueAt(temperatures, idx),
                                     humidity = valueAt(humidities, idx),
                                     pressure = valueAt(pressures, idx),
+                                    fileSizeBytes = valueAt(fileSizes, idx) ?: 0L,
+                                    imageWidth = valueAt(imageWidths, idx),
+                                    imageHeight = valueAt(imageHeights, idx),
                                 )
                             }
                         } else {
@@ -115,7 +129,10 @@ class ImageViewerActivity : ComponentActivity() {
                                     longitude = longitude,
                                     temperature = temperature,
                                     humidity = humidity,
-                                    pressure = pressure
+                                    pressure = pressure,
+                                    fileSizeBytes = fileSizeBytes,
+                                    imageWidth = imageWidth,
+                                    imageHeight = imageHeight
                                 )
                             )
                         }
@@ -132,6 +149,9 @@ class ImageViewerActivity : ComponentActivity() {
                 val activeTemperature = active?.temperature ?: temperature
                 val activeHumidity = active?.humidity ?: humidity
                 val activePressure = active?.pressure ?: pressure
+                val activeFileSize = active?.fileSizeBytes ?: fileSizeBytes
+                val activeImageWidth = active?.imageWidth ?: imageWidth
+                val activeImageHeight = active?.imageHeight ?: imageHeight
 
                 val titleText = formatViewerTitle(activeFilename)
                 val gpsText = if (activeLatitude != null && activeLongitude != null) {
@@ -142,21 +162,27 @@ class ImageViewerActivity : ComponentActivity() {
                 val temperatureText = activeTemperature?.let { String.format("%.1f C", it) } ?: "n/a"
                 val humidityText = activeHumidity?.let { String.format("%.1f %%", it) } ?: "n/a"
                 val pressureText = activePressure?.let { String.format("%.1f hPa", it) } ?: "n/a"
+                val fileSizeText = formatBytes(activeFileSize)
+                val resolutionText = formatResolution(activeImageWidth, activeImageHeight)
+                val cfg = LocalConfiguration.current
+                val tabletLandscape = cfg.screenWidthDp >= 700 && cfg.orientation == Configuration.ORIENTATION_LANDSCAPE
 
                 Scaffold(
                     containerColor = MaterialTheme.colorScheme.background,
                     topBar = {
-                        TopAppBar(
-                            title = {
-                                Text(
-                                    titleText.ifBlank { "Image" },
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            },
-                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-                        )
+                        if (!tabletLandscape) {
+                            TopAppBar(
+                                title = {
+                                    Text(
+                                        titleText.ifBlank { "Image" },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                            )
+                        }
                     }
                 ) { inner ->
                     Card(
@@ -173,102 +199,224 @@ class ImageViewerActivity : ComponentActivity() {
                                 .padding(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f, fill = true)
-                                    .heightIn(max = 340.dp)
-                                    .clipToBounds()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                AsyncImage(
-                                    model = imageUrl,
-                                    contentDescription = activeFilename,
+                            if (tabletLandscape) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                titleText.ifBlank { "Image" },
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (viewerItems.size > 1) {
+                                                FilledTonalButton(
+                                                    onClick = {
+                                                        if (currentIndex > 0) {
+                                                            currentIndex -= 1
+                                                            scale = 1f
+                                                            offsetX = 0f
+                                                            offsetY = 0f
+                                                        }
+                                                    },
+                                                    enabled = !deleting && currentIndex > 0,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                ) { Text("Prev") }
+                                                FilledTonalButton(
+                                                    onClick = {
+                                                        if (currentIndex < viewerItems.lastIndex) {
+                                                            currentIndex += 1
+                                                            scale = 1f
+                                                            offsetX = 0f
+                                                            offsetY = 0f
+                                                        }
+                                                    },
+                                                    enabled = !deleting && currentIndex < viewerItems.lastIndex,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                ) { Text("Next") }
+                                            }
+                                            Button(
+                                                onClick = { confirmDelete = true },
+                                                enabled = !deleting,
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) { Text("Delete") }
+                                        }
+                                        Text(
+                                            "Resolution: $resolutionText | Size: $fileSizeText",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            "GPS: $gpsText | Temperature: $temperatureText | Humidity: $humidityText | Pressure: $pressureText",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                deleteError?.let {
+                                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                }
+                                Box(
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .onSizeChanged { sz ->
-                                            viewportWidth = sz.width.toFloat().coerceAtLeast(1f)
-                                            viewportHeight = sz.height.toFloat().coerceAtLeast(1f)
-                                        }
-                                        .graphicsLayer {
-                                            scaleX = scale
-                                            scaleY = scale
-                                            translationX = offsetX
-                                            translationY = offsetY
-                                        }
-                                        .pointerInput(activeFilename, currentIndex, viewportWidth, viewportHeight) {
-                                            detectTransformGestures { _, pan, zoom, _ ->
-                                                val newScale = (scale * zoom).coerceIn(1f, 6f)
-                                                if (newScale <= 1.01f) {
+                                        .fillMaxWidth()
+                                        .weight(1f, fill = true)
+                                        .clipToBounds()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    AsyncImage(
+                                        model = imageUrl,
+                                        contentDescription = activeFilename,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .onSizeChanged { sz ->
+                                                viewportWidth = sz.width.toFloat().coerceAtLeast(1f)
+                                                viewportHeight = sz.height.toFloat().coerceAtLeast(1f)
+                                            }
+                                            .graphicsLayer {
+                                                scaleX = scale
+                                                scaleY = scale
+                                                translationX = offsetX
+                                                translationY = offsetY
+                                            }
+                                            .pointerInput(activeFilename, currentIndex, viewportWidth, viewportHeight) {
+                                                detectTransformGestures { _, pan, zoom, _ ->
+                                                    val newScale = (scale * zoom).coerceIn(1f, 6f)
+                                                    if (newScale <= 1.01f) {
+                                                        scale = 1f
+                                                        offsetX = 0f
+                                                        offsetY = 0f
+                                                        return@detectTransformGestures
+                                                    }
+                                                    val maxX = (viewportWidth * (newScale - 1f)) / 2f
+                                                    val maxY = (viewportHeight * (newScale - 1f)) / 2f
+                                                    offsetX = (offsetX + pan.x * 1.15f).coerceIn(-maxX, maxX)
+                                                    offsetY = (offsetY + pan.y * 1.15f).coerceIn(-maxY, maxY)
+                                                    scale = newScale
+                                                }
+                                            },
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f, fill = true)
+                                        .heightIn(max = 340.dp)
+                                        .clipToBounds()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    AsyncImage(
+                                        model = imageUrl,
+                                        contentDescription = activeFilename,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .onSizeChanged { sz ->
+                                                viewportWidth = sz.width.toFloat().coerceAtLeast(1f)
+                                                viewportHeight = sz.height.toFloat().coerceAtLeast(1f)
+                                            }
+                                            .graphicsLayer {
+                                                scaleX = scale
+                                                scaleY = scale
+                                                translationX = offsetX
+                                                translationY = offsetY
+                                            }
+                                            .pointerInput(activeFilename, currentIndex, viewportWidth, viewportHeight) {
+                                                detectTransformGestures { _, pan, zoom, _ ->
+                                                    val newScale = (scale * zoom).coerceIn(1f, 6f)
+                                                    if (newScale <= 1.01f) {
+                                                        scale = 1f
+                                                        offsetX = 0f
+                                                        offsetY = 0f
+                                                        return@detectTransformGestures
+                                                    }
+                                                    val maxX = (viewportWidth * (newScale - 1f)) / 2f
+                                                    val maxY = (viewportHeight * (newScale - 1f)) / 2f
+                                                    offsetX = (offsetX + pan.x * 1.15f).coerceIn(-maxX, maxX)
+                                                    offsetY = (offsetY + pan.y * 1.15f).coerceIn(-maxY, maxY)
+                                                    scale = newScale
+                                                }
+                                            },
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                        Text("Resolution: $resolutionText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text("Size: $fileSizeText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("GPS: $gpsText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("Temperature: $temperatureText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text("Humidity: $humidityText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text("Pressure: $pressureText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                                if (viewerItems.size > 1) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilledTonalButton(
+                                            onClick = {
+                                                if (currentIndex > 0) {
+                                                    currentIndex -= 1
                                                     scale = 1f
                                                     offsetX = 0f
                                                     offsetY = 0f
-                                                    return@detectTransformGestures
                                                 }
-                                                val maxX = (viewportWidth * (newScale - 1f)) / 2f
-                                                val maxY = (viewportHeight * (newScale - 1f)) / 2f
-                                                offsetX = (offsetX + pan.x * 1.15f).coerceIn(-maxX, maxX)
-                                                offsetY = (offsetY + pan.y * 1.15f).coerceIn(-maxY, maxY)
-                                                scale = newScale
-                                            }
-                                        },
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                            ) {
-                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                    Text("GPS: $gpsText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Temperature: $temperatureText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text("Humidity: $humidityText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text("Pressure: $pressureText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                            },
+                                            enabled = !deleting && currentIndex > 0,
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) { Text("Prev") }
+                                        FilledTonalButton(
+                                            onClick = {
+                                                if (currentIndex < viewerItems.lastIndex) {
+                                                    currentIndex += 1
+                                                    scale = 1f
+                                                    offsetX = 0f
+                                                    offsetY = 0f
+                                                }
+                                            },
+                                            enabled = !deleting && currentIndex < viewerItems.lastIndex,
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) { Text("Next") }
+                                    }
                                 }
-                            }
-                            if (viewerItems.size > 1) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FilledTonalButton(
-                                        onClick = {
-                                            if (currentIndex > 0) {
-                                                currentIndex -= 1
-                                                scale = 1f
-                                                offsetX = 0f
-                                                offsetY = 0f
-                                            }
-                                        },
-                                        enabled = !deleting && currentIndex > 0,
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) { Text("Prev") }
-                                    FilledTonalButton(
-                                        onClick = {
-                                            if (currentIndex < viewerItems.lastIndex) {
-                                                currentIndex += 1
-                                                scale = 1f
-                                                offsetX = 0f
-                                                offsetY = 0f
-                                            }
-                                        },
-                                        enabled = !deleting && currentIndex < viewerItems.lastIndex,
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) { Text("Next") }
+                                Button(
+                                    onClick = { confirmDelete = true },
+                                    enabled = !deleting,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) { Text("Delete") }
+                                deleteError?.let {
+                                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                                 }
-                            }
-                            Button(
-                                onClick = { confirmDelete = true },
-                                enabled = !deleting,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp)
-                            ) { Text("Delete") }
-                            deleteError?.let {
-                                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -316,11 +464,17 @@ class ImageViewerActivity : ComponentActivity() {
         const val EXTRA_TEMPERATURE = "extra_temperature"
         const val EXTRA_HUMIDITY = "extra_humidity"
         const val EXTRA_PRESSURE = "extra_pressure"
+        const val EXTRA_FILE_SIZE_BYTES = "extra_file_size_bytes"
+        const val EXTRA_IMAGE_WIDTH = "extra_image_width"
+        const val EXTRA_IMAGE_HEIGHT = "extra_image_height"
         const val EXTRA_LATITUDES = "extra_latitudes"
         const val EXTRA_LONGITUDES = "extra_longitudes"
         const val EXTRA_TEMPERATURES = "extra_temperatures"
         const val EXTRA_HUMIDITIES = "extra_humidities"
         const val EXTRA_PRESSURES = "extra_pressures"
+        const val EXTRA_FILE_SIZES = "extra_file_sizes"
+        const val EXTRA_IMAGE_WIDTHS = "extra_image_widths"
+        const val EXTRA_IMAGE_HEIGHTS = "extra_image_heights"
     }
 }
 
@@ -374,6 +528,17 @@ private fun valueAt(values: DoubleArray?, index: Int): Double? {
     return if (v.isNaN()) null else v
 }
 
+private fun valueAt(values: LongArray?, index: Int): Long? {
+    if (values == null || index !in values.indices) return null
+    return values[index]
+}
+
+private fun valueAt(values: IntArray?, index: Int): Int? {
+    if (values == null || index !in values.indices) return null
+    val v = values[index]
+    return if (v > 0) v else null
+}
+
 private fun deleteImageViaApi(baseUrlRaw: String, filename: String): Boolean {
     return try {
         val base = baseUrlRaw.trimEnd('/')
@@ -415,4 +580,21 @@ private fun formatViewerTitle(filename: String): String {
     }
     val ts = formatCompactDateTime(filename)
     return if (ts == filename) "$source $filename" else "$source $ts"
+}
+
+private fun formatResolution(width: Int?, height: Int?): String {
+    val w = width ?: 0
+    val h = height ?: 0
+    return if (w > 0 && h > 0) "${w}x${h}" else "-"
+}
+
+private fun formatBytes(bytes: Long): String {
+    val b = if (bytes < 0) 0L else bytes
+    val mb = 1024L * 1024L
+    val kb = 1024L
+    return when {
+        b >= mb -> String.format("%.2f MB", b.toDouble() / mb.toDouble())
+        b >= kb -> String.format("%.1f kB", b.toDouble() / kb.toDouble())
+        else -> "$b B"
+    }
 }

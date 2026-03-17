@@ -746,32 +746,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshLocalNetworkInfo()
         val detectedPrefix = detectCurrentLanPrefix()
         val subnetPrefix = extractSubnetPrefix(state.baseUrl)
-        val targetPrefix = detectedPrefix ?: when (state.network?.mode) {
-            "ap_only" -> "192.168.4."
-            "wifi_only", "hybrid_debug" -> "192.168.1."
-            else -> if (subnetPrefix == "192.168.4.") "192.168.4." else "192.168.1."
-        }
+        val rpiPrefix = detectedPrefix ?: subnetPrefix ?: "192.168.1."
+        val espPrefix = "192.168.4."
         state = state.copy(
-            log = "Discovery start on ${targetPrefix}0/24 (base ${state.baseUrl.removePrefix("http://")})",
+            log = "Discovery start: RPi on ${rpiPrefix}0/24, ESP on ${espPrefix}0/24",
             discoveredRpiBaseUrls = emptyList(),
             discoveredEspBaseUrls = emptyList(),
         )
         onState(state)
 
-        val directRpiCandidates = if (targetPrefix == "192.168.4.") {
-            listOf(
-                "http://192.168.4.1:5000",
-                normalizeBase(state.baseUrl, withPort5000 = true),
-            )
-        } else {
-            listOf(
-                normalizeBase(state.baseUrl, withPort5000 = true),
-                "http://raspberrypi.local:5000",
-            )
-        }
+        val directRpiCandidates = listOf(
+            normalizeBase(state.baseUrl, withPort5000 = true),
+            "http://raspberrypi.local:5000",
+            "http://${rpiPrefix}1:5000",
+        )
         val rememberedRpiCandidates = loadHosts(prefRpiHosts)
             .map { normalizeBase(it, withPort5000 = true) }
-            .filter { matchesTargetPrefix(it, targetPrefix) || it.contains("raspberrypi.local") }
+            .filter { matchesTargetPrefix(it, rpiPrefix) || it.contains("raspberrypi.local") }
         val quickRpiCandidates = (rememberedRpiCandidates + directRpiCandidates)
             .map { normalizeBase(it, withPort5000 = true) }
             .distinct()
@@ -788,52 +779,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .filterNotNull()
         }
 
-        val foundEspFinal = if (targetPrefix != "192.168.4.") {
-            emptyList()
-        } else {
-            val directEspCandidates = listOf(
-                state.selectedEspBaseUrl,
-                "http://192.168.4.2",
-            ).filterNotNull().distinct()
-            val rememberedEspCandidates = loadHosts(prefEspHosts)
-                .map { normalizeBase(it, withPort5000 = false) }
-                .filter { matchesTargetPrefix(it, targetPrefix) }
-            val quickEspCandidates = (rememberedEspCandidates + directEspCandidates)
-                .map { normalizeBase(it, withPort5000 = false) }
-                .distinct()
+        val rememberedEspCandidates = loadHosts(prefEspHosts)
+            .map { normalizeBase(it, withPort5000 = false) }
+            .filter { matchesTargetPrefix(it, espPrefix) }
+        val directEspCandidates = listOfNotNull(
+            state.selectedEspBaseUrl,
+            "http://192.168.4.2",
+        )
+            .map { normalizeBase(it, withPort5000 = false) }
+            .filter { matchesTargetPrefix(it, espPrefix) }
 
-            val quickEspFound = withContext(Dispatchers.IO) {
-                quickEspCandidates
-                    .map { candidate ->
-                        async {
-                            if (isEspCamUp(candidate)) candidate else null
-                        }
-                    }
-                    .awaitAll()
-                    .filterNotNull()
-            }
-
-            val quickAnyFound = quickRpiFound.isNotEmpty() || quickEspFound.isNotEmpty()
-            val foundEsp = if (quickAnyFound) {
-                emptyList()
-            } else {
-                withContext(Dispatchers.IO) {
-                    (1..254).chunked(24).flatMap { chunk ->
-                        chunk.map { host ->
-                            async {
-                                val base = "http://${targetPrefix}${host}"
-                                if (isEspCamUp(base)) base else null
-                            }
-                        }.awaitAll().filterNotNull()
+        val quickEspCandidates = (rememberedEspCandidates + directEspCandidates)
+            .distinct()
+        val quickEspFound = withContext(Dispatchers.IO) {
+            quickEspCandidates
+                .map { candidate ->
+                    async {
+                        if (isEspCamUp(candidate)) candidate else null
                     }
                 }
-            }
+                .awaitAll()
+                .filterNotNull()
+        }
 
-            val merged = (quickEspFound + foundEsp).distinct().sorted()
-            if (merged.isNotEmpty()) {
-                saveHosts(prefEspHosts, mergeRecent(merged, rememberedEspCandidates))
+        val foundEsp = if (quickEspFound.isNotEmpty()) {
+            emptyList()
+        } else {
+            withContext(Dispatchers.IO) {
+                (1..254).chunked(24).flatMap { chunk ->
+                    chunk.map { host ->
+                        async {
+                            val base = "http://${espPrefix}${host}"
+                            if (isEspCamUp(base)) base else null
+                        }
+                    }.awaitAll().filterNotNull()
+                }
             }
-            merged
+        }
+
+        val foundEspFinal = (quickEspFound + foundEsp).distinct().sorted()
+        if (foundEspFinal.isNotEmpty()) {
+            saveHosts(prefEspHosts, mergeRecent(foundEspFinal, rememberedEspCandidates))
         }
 
         val quickAnyFound = quickRpiFound.isNotEmpty() || foundEspFinal.isNotEmpty()
@@ -844,7 +830,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 (1..254).chunked(24).flatMap { chunk ->
                     chunk.map { host ->
                         async {
-                            val base = "http://${targetPrefix}${host}:5000"
+                            val base = "http://${rpiPrefix}${host}:5000"
                             if (isAgriAppUp(base)) base else null
                         }
                     }.awaitAll().filterNotNull()

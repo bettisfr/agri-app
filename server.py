@@ -1342,10 +1342,20 @@ def api_esp_capture_proxy():
         helper,
         "--url",
         esp_capture_url,
-        "--framesize",
-        "qxga",
         "--timeout",
         "20",
+        "--out",
+        tmp_name,
+    ]
+    lowres_cmd = [
+        "python3",
+        helper,
+        "--url",
+        esp_capture_url,
+        "--framesize",
+        "vga",
+        "--timeout",
+        "12",
         "--out",
         tmp_name,
     ]
@@ -1365,11 +1375,12 @@ def api_esp_capture_proxy():
         return jsonify({"status": "error", "message": f"esp capture failed: {e}"}), 500
 
     used_fallback = False
+    used_lowres = False
     strict_stdout = (proc.stdout or "")
     strict_stderr = (proc.stderr or "")
     if proc.returncode != 0:
         # Some firmware variants intermittently reject /control (framesize/quality).
-        # Retry a plain /capture to avoid hard-failing the API when controls fail.
+        # Retry a plain /capture first to avoid hard-failing when controls fail.
         try:
             proc = subprocess.run(
                 fallback_cmd,
@@ -1380,6 +1391,23 @@ def api_esp_capture_proxy():
                 check=False,
             )
             used_fallback = proc.returncode == 0
+        except subprocess.TimeoutExpired:
+            return jsonify({"status": "error", "message": "esp capture timeout"}), 504
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"esp capture failed: {e}"}), 500
+
+    if proc.returncode != 0:
+        # Final safety net: force a low-res frame to keep auto-loop alive on weak links.
+        try:
+            proc = subprocess.run(
+                lowres_cmd,
+                cwd=os.path.dirname(__file__),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            used_lowres = proc.returncode == 0
         except subprocess.TimeoutExpired:
             return jsonify({"status": "error", "message": "esp capture timeout"}), 504
         except Exception as e:
@@ -1460,6 +1488,8 @@ def api_esp_capture_proxy():
     )
     if used_fallback:
         resp.headers["X-AgriApp-Esp-Fallback"] = "1"
+    if used_lowres:
+        resp.headers["X-AgriApp-Esp-LowRes"] = "1"
     if saved_name:
         resp.headers["X-AgriApp-Filename"] = saved_name
         if saved_metadata.get("latitude") is not None:

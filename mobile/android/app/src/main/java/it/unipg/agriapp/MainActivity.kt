@@ -1,6 +1,7 @@
 package it.unipg.agriapp
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -46,6 +47,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +69,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import it.unipg.agriapp.ui.MainUiState
 import it.unipg.agriapp.ui.MainViewModel
 import it.unipg.agriapp.ui.theme.AgriAppTheme
@@ -180,7 +183,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val isPhoneLayout = LocalConfiguration.current.screenWidthDp < 700
+                val isPhoneLayout = true
 
                 if (isPhoneLayout) {
                     PhoneMainScaffold(
@@ -249,6 +252,9 @@ class MainActivity : ComponentActivity() {
                             val temperatures = DoubleArray(ui.images.size) { idx -> ui.images[idx].metadata?.temperature ?: Double.NaN }
                             val humidities = DoubleArray(ui.images.size) { idx -> ui.images[idx].metadata?.humidity ?: Double.NaN }
                             val pressures = DoubleArray(ui.images.size) { idx -> ui.images[idx].metadata?.pressure ?: Double.NaN }
+                            val fileSizes = LongArray(ui.images.size) { idx -> ui.images[idx].file_size_bytes }
+                            val imageWidths = IntArray(ui.images.size) { idx -> ui.images[idx].image_width ?: 0 }
+                            val imageHeights = IntArray(ui.images.size) { idx -> ui.images[idx].image_height ?: 0 }
                             val selected = ui.images.getOrNull(selectedIndex)
                             val intent = Intent(this@MainActivity, ImageViewerActivity::class.java)
                             intent.putExtra(ImageViewerActivity.EXTRA_BASE_URL, ui.baseUrl)
@@ -258,6 +264,9 @@ class MainActivity : ComponentActivity() {
                             intent.putExtra(ImageViewerActivity.EXTRA_TEMPERATURE, selected?.metadata?.temperature)
                             intent.putExtra(ImageViewerActivity.EXTRA_HUMIDITY, selected?.metadata?.humidity)
                             intent.putExtra(ImageViewerActivity.EXTRA_PRESSURE, selected?.metadata?.pressure)
+                            intent.putExtra(ImageViewerActivity.EXTRA_FILE_SIZE_BYTES, selected?.file_size_bytes ?: 0L)
+                            intent.putExtra(ImageViewerActivity.EXTRA_IMAGE_WIDTH, selected?.image_width ?: 0)
+                            intent.putExtra(ImageViewerActivity.EXTRA_IMAGE_HEIGHT, selected?.image_height ?: 0)
                             intent.putExtra(ImageViewerActivity.EXTRA_FILENAMES, filenames)
                             intent.putExtra(ImageViewerActivity.EXTRA_INDEX, selectedIndex)
                             intent.putExtra(ImageViewerActivity.EXTRA_LATITUDES, latitudes)
@@ -265,6 +274,9 @@ class MainActivity : ComponentActivity() {
                             intent.putExtra(ImageViewerActivity.EXTRA_TEMPERATURES, temperatures)
                             intent.putExtra(ImageViewerActivity.EXTRA_HUMIDITIES, humidities)
                             intent.putExtra(ImageViewerActivity.EXTRA_PRESSURES, pressures)
+                            intent.putExtra(ImageViewerActivity.EXTRA_FILE_SIZES, fileSizes)
+                            intent.putExtra(ImageViewerActivity.EXTRA_IMAGE_WIDTHS, imageWidths)
+                            intent.putExtra(ImageViewerActivity.EXTRA_IMAGE_HEIGHTS, imageHeights)
                             startActivity(intent)
                         },
                         onGalleryDeleteClick = { pendingDelete = it }
@@ -324,23 +336,29 @@ class MainActivity : ComponentActivity() {
                                                 modifier = Modifier.horizontalScroll(rememberScrollState())
                                             ) {
                                                 Text("RPi", fontWeight = FontWeight.SemiBold)
-                                                if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
-                                                    ui.discoveredRpiBaseUrls.take(2).forEach { host ->
-                                                        HostChip(
-                                                            label = compactHostLabel(host),
-                                                            onClick = {
-                                                                vm.updateBaseUrl(host)
-                                                                ui = vm.state
-                                                            }
-                                                        )
-                                                    }
+                                                val rpiHosts = if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
+                                                    ui.discoveredRpiBaseUrls
                                                 } else {
-                                                    Text("n/a", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    listOf(ui.baseUrl)
+                                                }
+                                                rpiHosts.take(2).forEach { host ->
+                                                    HostChip(
+                                                        label = compactHostLabel(host),
+                                                        onClick = {
+                                                            vm.updateBaseUrl(host)
+                                                            ui = vm.state
+                                                        }
+                                                    )
                                                 }
                                                 Spacer(Modifier.width(10.dp))
                                                 Text("ESP", fontWeight = FontWeight.SemiBold)
-                                                if (ui.discoveredEspBaseUrls.isNotEmpty()) {
-                                                    ui.discoveredEspBaseUrls.take(2).forEach { host ->
+                                                val espHosts = if (ui.discoveredEspBaseUrls.isNotEmpty()) {
+                                                    ui.discoveredEspBaseUrls
+                                                } else {
+                                                    listOfNotNull(ui.selectedEspBaseUrl)
+                                                }
+                                                if (espHosts.isNotEmpty()) {
+                                                    espHosts.take(2).forEach { host ->
                                                         HostChip(
                                                             label = compactHostLabel(host),
                                                             onClick = {
@@ -650,7 +668,7 @@ private fun PhoneMainScaffold(
     onGalleryImageClick: (String) -> Unit,
     onGalleryDeleteClick: (String) -> Unit
 ) {
-    var tab by remember { mutableStateOf(PhoneTab.Home) }
+    var tab by rememberSaveable { mutableStateOf(PhoneTab.Home) }
     var systemConfirmAction by remember { mutableStateOf<String?>(null) }
     val anyAutoRunning = (ui.autoCaptureRpiRunning == true) || (ui.autoCaptureEspRunning == true)
     val selectedSource = ui.selectedAutoCaptureSource
@@ -660,6 +678,8 @@ private fun PhoneMainScaffold(
         "both" -> anyAutoRunning
         else -> ui.autoCaptureRpiRunning == true
     }
+    val cfg = LocalConfiguration.current
+    val systemWideLandscape = cfg.screenWidthDp >= 700 && cfg.orientation == Configuration.ORIENTATION_LANDSCAPE
     val intervalOptions = listOf(30, 60, 120, 180, 300)
 
     Scaffold(
@@ -714,12 +734,13 @@ private fun PhoneMainScaffold(
                                 modifier = Modifier.horizontalScroll(rememberScrollState())
                             ) {
                                 Text("RPi", fontWeight = FontWeight.SemiBold)
-                                if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
-                                    ui.discoveredRpiBaseUrls.take(3).forEach { host ->
-                                        HostChip(label = compactHostLabel(host), onClick = { onSelectRpiHost(host) })
-                                    }
+                                val rpiHosts = if (ui.discoveredRpiBaseUrls.isNotEmpty()) {
+                                    ui.discoveredRpiBaseUrls
                                 } else {
-                                    Text("n/a", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    listOf(ui.baseUrl)
+                                }
+                                rpiHosts.take(3).forEach { host ->
+                                    HostChip(label = compactHostLabel(host), onClick = { onSelectRpiHost(host) })
                                 }
                             }
                             Text(
@@ -733,8 +754,13 @@ private fun PhoneMainScaffold(
                                 modifier = Modifier.horizontalScroll(rememberScrollState())
                             ) {
                                 Text("ESP", fontWeight = FontWeight.SemiBold)
-                                if (ui.discoveredEspBaseUrls.isNotEmpty()) {
-                                    ui.discoveredEspBaseUrls.take(3).forEach { host ->
+                                val espHosts = if (ui.discoveredEspBaseUrls.isNotEmpty()) {
+                                    ui.discoveredEspBaseUrls
+                                } else {
+                                    listOfNotNull(ui.selectedEspBaseUrl)
+                                }
+                                if (espHosts.isNotEmpty()) {
+                                    espHosts.take(3).forEach { host ->
                                         HostChip(label = compactHostLabel(host), onClick = { onSelectEspHost(host) })
                                     }
                                 } else {
@@ -901,14 +927,8 @@ private fun PhoneMainScaffold(
                         shape = compactShape,
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Text("System", fontWeight = FontWeight.SemiBold)
-                            val activeClientConn = ui.network?.active_wifi_connections?.firstOrNull { it != ui.network?.ap_connection }
+                        val activeClientConn = ui.network?.active_wifi_connections?.firstOrNull { it != ui.network?.ap_connection }
+                        val storageCard: @androidx.compose.runtime.Composable () -> Unit = {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = compactShape,
@@ -925,6 +945,8 @@ private fun PhoneMainScaffold(
                                     Text("Free: ${freeMb} MB", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                 }
                             }
+                        }
+                        val wifiCard: @androidx.compose.runtime.Composable () -> Unit = {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = compactShape,
@@ -977,6 +999,8 @@ private fun PhoneMainScaffold(
                                     }
                                 }
                             }
+                        }
+                        val serverCard: @androidx.compose.runtime.Composable () -> Unit = {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = compactShape,
@@ -997,6 +1021,8 @@ private fun PhoneMainScaffold(
                                     ) { Text("Restart Server") }
                                 }
                             }
+                        }
+                        val powerCard: @androidx.compose.runtime.Composable () -> Unit = {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = compactShape,
@@ -1022,6 +1048,43 @@ private fun PhoneMainScaffold(
                                         contentPadding = compactBtnPadding
                                     ) { Text("Power Off RPi") }
                                 }
+                            }
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("System", fontWeight = FontWeight.SemiBold)
+                            if (systemWideLandscape) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        storageCard()
+                                        wifiCard()
+                                    }
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        serverCard()
+                                        powerCard()
+                                    }
+                                }
+                            } else {
+                                storageCard()
+                                wifiCard()
+                                serverCard()
+                                powerCard()
                             }
                             if (systemConfirmAction != null) {
                                 val actionText = if (systemConfirmAction == "reboot") "Reboot Raspberry Pi?" else "Power off Raspberry Pi?"
