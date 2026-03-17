@@ -54,6 +54,8 @@ Thumbnail cache is managed automatically by deletion endpoints, but periodic san
 \subsection{Network Mode Operations}
 AgriApp is operated across heterogeneous network contexts. In infrastructure Wi-Fi mode, discovery should be fast and mostly cache-driven. In AP mode, local control continuity takes priority over throughput.
 
+For AP reliability with ESP32-CAM devices, practical field configuration matters. In current operations, the rescue AP is managed with a fixed 2.4\,GHz channel (channel 6) and compatibility-oriented WPA2 settings. This avoids recurrent association failures observed when AP channel selection is left fully automatic or when security negotiation is too strict for older ESP firmware stacks.
+
 Mode switching must be followed by a brief verification phase (reachability, status endpoint, shot action) before proceeding with high-value operations. This small discipline prevents silent mode drift during field sessions.
 In current tablet operation, a delayed automatic discovery pass is triggered after Wi-Fi/AP mode changes, reducing the need for repeated manual discovery taps during subnet transitions.
 

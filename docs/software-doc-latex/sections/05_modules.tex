@@ -29,7 +29,7 @@ Consistency between these artifacts is treated as a data integrity requirement. 
 \subsection{Network and Discovery Module}
 This module spans backend and Android responsibilities. On backend side, it exposes network mode APIs that call dedicated scripts to switch between Wi-Fi and AP operation. On Android side, it implements cache-first discovery and subnet-aware probing.
 
-The module is intentionally context-sensitive: in known infrastructure Wi-Fi scenarios it avoids unnecessary ESP probing, while in AP rescue scenarios it supports full local control. This reduces latency and unnecessary network noise.
+The module uses a deterministic probing strategy to simplify field behavior and debugging. RPi discovery follows the current client subnet, while ESP discovery is constrained to the AP/rescue segment (\texttt{192.168.4.0/24}). This keeps runtime behavior predictable and reduces ambiguity during mode transitions.
 
 \subsection{System Control Module}
 System control operations are exposed as dedicated high-impact actions: backend restart, Raspberry Pi reboot, and poweroff. This module is safety-oriented: actions are explicit, require deliberate UI confirmation, and return operational feedback suitable for logs.
