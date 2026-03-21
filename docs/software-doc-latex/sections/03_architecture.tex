@@ -7,7 +7,7 @@ At a structural level, the system is composed of three cooperating tiers. The fi
 
 The Raspberry Pi therefore plays a dual role: it is both an acquisition endpoint and an application server. This dual role simplifies deployment and makes local operations deterministic. An optional ESP32-CAM can be attached to the ecosystem as a secondary image source. In this case, Raspberry Pi acts as a proxy and orchestration point, so clients can keep a single control flow even when direct ESP connectivity is unstable.
 
-In addition to image sources, the edge tier integrates optional contextual sensors. A USB GPS receiver provides geospatial coordinates, while a BME280 on I2C provides environmental values. Both sensors are sampled with best-effort logic during capture workflows and are persisted as per-image sidecar metadata.
+In addition to image sources, the edge tier integrates optional contextual sensors. GPS coordinates are acquired through the Raspberry Pi UART path (\texttt{/dev/serial0}), while a BME280 on I2C provides environmental values. Both sensors are sampled with best-effort logic during capture workflows and are persisted as per-image sidecar metadata.
 
 \begin{figure}[htbp]
 \centering

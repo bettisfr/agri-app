@@ -35,10 +35,21 @@ Runtime wrappers (notably \texttt{run\_server.sh} and capture wrappers) support 
 
 For sensor-enabled metadata enrichment, deployment validation should include:
 \begin{itemize}
-  \item GPS visibility on serial path,
+  \item GPS visibility on UART serial path (\texttt{/dev/serial0}),
   \item BME280 visibility on I2C bus,
   \item successful metadata sidecar generation after one-shot capture.
 \end{itemize}
+
+\subsection{GPS UART Wiring Reference}
+For compact GPIO wiring, GPS can be connected through the hardware UART:
+\begin{itemize}
+  \item \textbf{TX} (GPS) $\rightarrow$ \textbf{RPi RXD0 / GPIO15} (pin 10),
+  \item \textbf{RX} (GPS) $\rightarrow$ \textbf{RPi TXD0 / GPIO14} (pin 8),
+  \item \textbf{GND} (GPS) $\rightarrow$ \textbf{RPi GND} (pin 14),
+  \item \textbf{VCC} (GPS) $\rightarrow$ \textbf{RPi 3.3V} (pin 17).
+\end{itemize}
+
+During deployment, UART console must be disabled on \texttt{serial0} and hardware UART enabled (\texttt{enable\_uart=1}) to avoid conflicts with Linux boot/login console.
 
 \subsection{BME280 Wiring Reference}
 In I2C mode, the minimal wiring uses four lines:

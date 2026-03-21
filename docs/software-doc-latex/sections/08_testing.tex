@@ -13,6 +13,8 @@ For ESP specifically, validation now includes a sidecar integrity check: each ne
 
 Sensor validation complements capture checks. GPS and BME280 are tested with dedicated scripts to verify device-level readability before end-to-end capture validation. API-level validation then confirms that contextual values are persisted in image metadata sidecars when available.
 
+In practical runs, GPS UART validation is considered successful when NMEA lines are readable from \texttt{/dev/serial0} and fix transitions to valid state (e.g., \texttt{RMC=A}, \texttt{GGA fix>0}). BME280 validation is considered successful when the sensor is visible on I2C (address \texttt{0x76}) and temperature/humidity/pressure values are returned by the dedicated test script.
+
 Deletion and lifecycle validation are equally critical. Single-image and bulk deletion operations are checked for consistency across image binaries and related annotation files. The goal is to prevent orphaned artifacts and silent divergence between gallery and labeling state.
 
 \subsection{Web and Labeler Validation}
