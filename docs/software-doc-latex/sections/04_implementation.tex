@@ -46,9 +46,15 @@ A notable implementation choice is best-effort metadata enrichment. After each s
 \subsection{Web Frontend Implementation}
 The web frontend is implemented with Flask templates plus static CSS/JavaScript modules. Its architecture separates gallery concerns from labeling concerns, reducing coupling and allowing iterative UI work without destabilizing annotation behavior.
 
+Recent refactoring introduced a shared template shell (\texttt{base.html}) and reusable partials for navbar/footer. This removed duplicated header/footer markup across pages (\texttt{index}, \texttt{gallery}, \texttt{capture}, \texttt{system}, \texttt{health}, \texttt{log}) and reduced visual drift between views. A practical consequence is faster UI iteration with lower regression risk when navigation or branding elements change.
+
+To improve field robustness, frontend dependencies were moved to locally served static assets (Bootstrap bundle and Socket.IO client), and external web-font dependencies were removed in favor of system-font stacks. This allows the web UI to render correctly even in isolated AP-only deployments where Internet access is unavailable.
+
 The gallery view is driven by server-side pagination and lightweight thumbnails. This is critical for large datasets: the list/grid view uses cached reduced images, while full-resolution images are loaded only in detail workflows. Mutation operations (save labels, delete image, delete-all) are followed by explicit API synchronization instead of optimistic local state assumptions.
 
 The labeler view is implemented as an interaction-focused editor for bounding boxes and class assignment. Persistence is dual-output by design: JSON preserves full UI state, while TXT keeps compatibility with YOLO pipelines.
+
+The \texttt{System} page and \texttt{Gallery} destructive flows now use custom confirmation modals instead of browser default popups, aligning interaction style with the rest of the UI and making high-impact operations (power actions, delete-all) more explicit.
 
 \subsection{Android App Implementation}
 The Android application is written in Kotlin with Jetpack Compose and Retrofit. The UI is state-driven through a central view-model that coordinates discovery, control actions, gallery pagination, and logs.

@@ -11,6 +11,7 @@ All operational clients should target \texttt{/api/v1} endpoints first. Legacy a
 Path & Method & Purpose \\
 \midrule
 \texttt{/api/v1/health} & GET & Service liveness and API version marker \\
+\texttt{/api/v1/health/checklist} & GET & Live checklist (RPi, ESP, camera, GPS, BME, storage) \\
 \texttt{/api/v1/system/status} & GET & Hostname, storage info, runtime timestamp \\
 \texttt{/api/v1/system/server/restart} & POST & Restart \texttt{agriapp-server.service} (user mode) \\
 \texttt{/api/v1/system/reboot} & POST & Reboot Raspberry Pi (requires sudo policy) \\
