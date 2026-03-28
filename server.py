@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, jsonify, send_file
+from flask import Flask, request, render_template, jsonify, send_file, Response
 from flask_socketio import SocketIO
 from werkzeug.utils import secure_filename
 import os
@@ -670,6 +670,196 @@ def index():
 @app.route("/gallery")
 def gallery():
     return render_template("gallery.html")
+
+
+@app.route("/capture")
+def capture_page():
+    return render_template("capture.html")
+
+
+@app.route("/system")
+def system_page():
+    return render_template("system.html")
+
+
+@app.route("/log")
+def log_page():
+    return render_template("log.html")
+
+
+@app.route("/api/v1/logs")
+def api_logs():
+    """
+    Return recent runtime logs for web dashboard.
+    Query params:
+      - lines: max lines per log source (default 120, max 500)
+    """
+    try:
+        lines = int((request.args.get("lines") or "120").strip())
+    except Exception:
+        lines = 120
+    lines = max(10, min(lines, 500))
+
+    def tail_lines(path: str, n: int):
+        if not path or not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                data = f.readlines()
+            return [ln.rstrip("\n") for ln in data[-n:]]
+        except Exception:
+            return []
+
+    capture_tail = tail_lines(CAPTURE_LOOP_LOG, lines)
+    esp_tail = tail_lines(ESP_CAPTURE_LOOP_LOG, lines)
+
+    server_tail = []
+    try:
+        proc = subprocess.run(
+            ["journalctl", "--user", "-u", "agriapp-server.service", "-n", str(lines), "--no-pager"],
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        if proc.returncode == 0:
+            server_tail = [ln for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    except Exception:
+        server_tail = []
+
+    return jsonify(
+        {
+            "status": "success",
+            "lines": lines,
+            "sources": {
+                "server": {
+                    "path": "journalctl --user -u agriapp-server.service",
+                    "items": server_tail,
+                },
+                "capture_rpi_loop": {
+                    "path": CAPTURE_LOOP_LOG,
+                    "items": capture_tail,
+                },
+                "capture_esp_loop": {
+                    "path": ESP_CAPTURE_LOOP_LOG,
+                    "items": esp_tail,
+                },
+            },
+        }
+    )
+
+
+def _tail_lines(path: str, n: int):
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            data = f.readlines()
+        return [ln.rstrip("\n") for ln in data[-n:]]
+    except Exception:
+        return []
+
+
+def _journal_tail(lines: int):
+    try:
+        proc = subprocess.run(
+            ["journalctl", "--user", "-u", "agriapp-server.service", "-n", str(lines), "--no-pager"],
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return [ln for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    except Exception:
+        pass
+    return []
+
+
+def _build_unified_log_text(lines: int):
+    server_tail = _journal_tail(lines)
+    capture_tail = _tail_lines(CAPTURE_LOOP_LOG, lines)
+    esp_tail = _tail_lines(ESP_CAPTURE_LOOP_LOG, lines)
+    rpi_status = _capture_loop_status_payload()
+
+    parts = []
+    parts.append("===== SERVER (agriapp-server.service) =====")
+    parts.extend(server_tail if server_tail else ["(no entries)"])
+    parts.append("")
+    rpi_interval = rpi_status.get("interval_seconds")
+    rpi_interval_part = f", interval={rpi_interval}s" if rpi_interval else ""
+    parts.append(
+        f"===== RPI LOOP ({CAPTURE_LOOP_LOG}) ===== "
+        f"[status: {'running' if rpi_status.get('running') else 'stopped'}"
+        f"{rpi_interval_part}]"
+    )
+    if capture_tail:
+        parts.extend(capture_tail)
+    else:
+        parts.append("(no entries; start auto capture RPi to populate this log)")
+
+    if esp_tail:
+        esp_status = _capture_esp_loop_status_payload()
+        esp_interval = esp_status.get("interval_seconds")
+        esp_base = esp_status.get("esp_base")
+        esp_interval_part = f", interval={esp_interval}s" if esp_interval else ""
+        esp_base_part = f", base={esp_base}" if esp_base else ""
+        parts.append("")
+        parts.append(
+            f"===== ESP LOOP ({ESP_CAPTURE_LOOP_LOG}) ===== "
+            f"[status: {'running' if esp_status.get('running') else 'stopped'}"
+            f"{esp_interval_part}"
+            f"{esp_base_part}]"
+        )
+        parts.extend(esp_tail)
+    return "\n".join(parts)
+
+
+@app.route("/api/v1/logs/stream")
+def api_logs_stream():
+    """
+    Server-Sent Events stream for unified runtime logs.
+    Query params:
+      - lines: max lines per source (default 120, max 500)
+      - interval: push interval seconds (default 2, max 10)
+    """
+    try:
+        lines = int((request.args.get("lines") or "120").strip())
+    except Exception:
+        lines = 120
+    lines = max(10, min(lines, 500))
+
+    try:
+        interval = float((request.args.get("interval") or "2").strip())
+    except Exception:
+        interval = 2.0
+    interval = max(1.0, min(interval, 10.0))
+
+    def generate():
+        last_text = None
+        while True:
+            text = _build_unified_log_text(lines)
+            if text != last_text:
+                payload = {
+                    "status": "success",
+                    "ts": int(time.time()),
+                    "lines": lines,
+                    "text": text,
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                last_text = text
+            time.sleep(interval)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.route("/label")
@@ -1503,6 +1693,65 @@ def api_esp_capture_proxy():
         if saved_metadata.get("pressure") is not None:
             resp.headers["X-AgriApp-Pressure"] = str(saved_metadata["pressure"])
     return resp
+
+
+@app.route("/api/v1/esp/status", methods=["GET"])
+def api_esp_status():
+    """
+    Probe ESP status endpoint through the server to avoid client-side CORS issues.
+    Query params:
+      - esp_base: e.g. http://192.168.4.239
+    """
+    esp_base = (request.args.get("esp_base") or "").strip()
+    if not esp_base:
+        return jsonify({"status": "error", "message": "missing esp_base"}), 400
+
+    try:
+        parsed = urllib.parse.urlsplit(esp_base)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return jsonify({"status": "error", "message": "invalid esp_base"}), 400
+        host = parsed.hostname or ""
+        ip_obj = ipaddress.ip_address(host)
+        if not ip_obj.is_private:
+            return jsonify({"status": "error", "message": "esp_base must be private IP"}), 400
+    except Exception:
+        return jsonify({"status": "error", "message": "invalid esp_base"}), 400
+
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    status_url = f"{base}/status"
+    started = time.time()
+    try:
+        req = urllib.request.Request(status_url, method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            raw = resp.read()
+            latency_ms = int((time.time() - started) * 1000)
+            body_text = raw.decode("utf-8", errors="replace")
+            parsed_json = None
+            try:
+                parsed_json = json.loads(body_text)
+            except Exception:
+                parsed_json = None
+            return jsonify(
+                {
+                    "status": "success",
+                    "reachable": True,
+                    "esp_base": base,
+                    "latency_ms": latency_ms,
+                    "http_status": getattr(resp, "status", 200),
+                    "esp_payload": parsed_json,
+                }
+            )
+    except Exception as e:
+        latency_ms = int((time.time() - started) * 1000)
+        return jsonify(
+            {
+                "status": "success",
+                "reachable": False,
+                "esp_base": base,
+                "latency_ms": latency_ms,
+                "message": str(e),
+            }
+        )
 
 
 @app.route("/api/v1/capture/esp/loop/status", methods=["GET"])
