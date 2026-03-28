@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block page_title %}Health{% endblock %}
+{% block body_class %}gallery-page{% endblock %}
+
+{% block content %}
+<div class="container my-5 gallery-shell">
+    <section class="gallery-hero">
+        <div>
+            <p class="gallery-kicker">Field Capture Console</p>
+            <h1 class="section-title mb-0">Health</h1>
+            <p class="gallery-subtitle mb-0">Live checklist of platform and sensors.</p>
+        </div>
+        <div class="gallery-hero-actions">
+            <button id="healthRefreshBtn" class="btn-download-dataset btn-download-secondary">Refresh</button>
+        </div>
+    </section>
+
+    <div class="card mb-3"><div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-8">
+                <label for="healthEspBase" class="form-label mb-1">ESP base URL (optional)</label>
+                <input id="healthEspBase" class="form-control" placeholder="http://192.168.4.239">
+            </div>
+            <div class="col-12 col-md-4">
+                <div><strong>Last update:</strong> <span id="healthUpdated">n/a</span></div>
+            </div>
+        </div>
+    </div></div>
+
+    <div class="card mb-3"><div class="card-body">
+        <h2 class="h5 mb-2">Checklist</h2>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                <tr><th>Component</th><th>Status</th><th>Details</th></tr>
+                </thead>
+                <tbody>
+                <tr><td>RPi</td><td id="hc-rpi-status">n/a</td><td id="hc-rpi-details">-</td></tr>
+                <tr><td>ESP</td><td id="hc-esp-status">n/a</td><td id="hc-esp-details">-</td></tr>
+                <tr><td>Camera</td><td id="hc-camera-status">n/a</td><td id="hc-camera-details">-</td></tr>
+                <tr><td>GPS</td><td id="hc-gps-status">n/a</td><td id="hc-gps-details">-</td></tr>
+                <tr><td>BME280</td><td id="hc-bme-status">n/a</td><td id="hc-bme-details">-</td></tr>
+                <tr><td>Storage</td><td id="hc-storage-status">n/a</td><td id="hc-storage-details">-</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div></div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='health-page.js') }}"></script>
+{% endblock %}

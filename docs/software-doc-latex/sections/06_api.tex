@@ -3,7 +3,7 @@
 \subsection{Contract Strategy}
 AgriApp adopts \texttt{/api/v1} as the canonical API namespace for all active client integrations (web and Android). The objective is contract stability across iterative releases: new features are added under versioned routes, while historical aliases are retained only for backward compatibility during migration.
 
-All operational clients should target \texttt{/api/v1} endpoints first. Legacy routes remain available only as compatibility bridges and are scheduled for progressive removal.
+All operational clients should target \texttt{/api/v1} endpoints first. Legacy aliases have been removed from the active runtime surface.
 
 \subsection{Canonical API v1 Endpoints}
 \begin{longtable}{p{0.36\linewidth} p{0.14\linewidth} p{0.45\linewidth}}
@@ -16,6 +16,8 @@ Path & Method & Purpose \\
 \texttt{/api/v1/system/reboot} & POST & Reboot Raspberry Pi (requires sudo policy) \\
 \texttt{/api/v1/system/poweroff} & POST & Power off Raspberry Pi (requires sudo policy) \\
 \texttt{/api/v1/network/mode} & GET/POST & Read/set network mode (\texttt{wifi\_only}, \texttt{ap\_only}, \texttt{hybrid\_debug}) \\
+\texttt{/api/v1/logs} & GET & Unified pull-based runtime logs (server + loops) \\
+\texttt{/api/v1/logs/stream} & GET & Unified push log stream (SSE) \\
 \texttt{/api/v1/images} & GET & Paginated image listing + metadata/filtering \\
 \texttt{/api/v1/images/\{filename\}/status} & GET & Per-image status, file size, metadata summary \\
 \texttt{/api/v1/images/\{filename\}/thumbnail} & GET & Cached thumbnail stream (query \texttt{w}) \\
@@ -26,6 +28,7 @@ Path & Method & Purpose \\
 \texttt{/api/v1/labels} & POST & Save labels (JSON + YOLO export sync) \\
 \texttt{/api/v1/capture/rpi/oneshot} & POST & Trigger one Raspberry Pi camera capture \\
 \texttt{/api/v1/capture/esp/oneshot} & GET & Trigger ESP capture via backend proxy \\
+\texttt{/api/v1/esp/status} & GET & Probe ESP status endpoint via backend \\
 \texttt{/api/v1/capture/loop/status} & GET & Inspect unattended capture loop state \\
 \texttt{/api/v1/capture/loop/start} & POST & Start unattended capture loop (\texttt{interval\_seconds}) \\
 \texttt{/api/v1/capture/loop/stop} & POST & Stop unattended capture loop \\
@@ -45,25 +48,16 @@ Path & Method & Purpose \\
 \midrule
 \texttt{/} & GET & Entry page \\
 \texttt{/gallery} & GET & Web gallery interface \\
+\texttt{/capture} & GET & Web capture/control page \\
+\texttt{/system} & GET & Web system/network page \\
+\texttt{/health} & GET & Web live checklist page (RPi/ESP/camera/GPS/BME/storage) \\
+\texttt{/log} & GET & Web runtime log page \\
 \texttt{/label} & GET & Web labeler interface (query \texttt{image}) \\
 \bottomrule
 \end{longtable}
 
 \subsection{Compatibility (Legacy) Routes}
-The following routes are still active for backward compatibility. They should be considered transitional and not used for new client development.
-
-\begin{longtable}{p{0.36\linewidth} p{0.14\linewidth} p{0.45\linewidth}}
-\toprule
-Path & Method & Note \\
-\midrule
-\texttt{/receive} & POST & Alias of upload workflow \\
-\texttt{/uploaded\_images} & GET & Legacy image list endpoint \\
-\texttt{/image-status} & GET & Legacy per-image status endpoint \\
-\texttt{/download-dataset} & GET & Alias of \texttt{/api/v1/download/dataset} \\
-\texttt{/download-dataset-selected} & POST & Alias of \texttt{/api/v1/download/dataset-selected} \\
-\texttt{/download-image-with-labels} & GET & Alias of \texttt{/api/v1/images/download-with-labels} \\
-\bottomrule
-\end{longtable}
+Legacy aliases have been removed from the runtime surface after migration of active clients to \texttt{/api/v1}. New integrations must target canonical versioned endpoints only.
 
 \subsection{Endpoint Grouping by Device}
 \subsubsection{Raspberry Pi Edge Node}
@@ -101,4 +95,4 @@ The API uses conventional HTTP statuses:
 In failure paths, JSON responses include compact diagnostic context (e.g., command stderr tail, validation message, timeout cause) to support field troubleshooting without requiring immediate shell access.
 
 \subsection{Migration Guidance}
-The immediate migration priority is complete client convergence on \texttt{/api/v1}. Legacy aliases should remain available only until no active client depends on them. Documentation and test plans should be updated in lockstep with each legacy route removal to avoid silent regressions.
+Client integrations are now converged on \texttt{/api/v1}. Future API evolution should preserve versioned routing discipline (\texttt{/api/vN}) and avoid introducing unversioned operational aliases.

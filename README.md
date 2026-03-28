@@ -6,7 +6,7 @@ Edge app for Raspberry Pi camera capture + local web gallery/labeling.
 
 - `server.py`
   - Runs the web server on port `5000`.
-  - Serves home/gallery/labeler UI.
+  - Serves home/gallery/capture/system/log/health/labeler UI.
   - Exposes APIs for image listing, label save/load, delete, and dataset download.
 
 - `client.py`
@@ -47,6 +47,7 @@ Open:
 
 ```text
 http://<rpi-ip>:5000/gallery
+http://<rpi-ip>:5000/health
 ```
 
 Single photo capture:
@@ -141,6 +142,8 @@ curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/stop
 - Current preferred deployment strategy:
   - `systemd` for server
   - timed capture controlled via API (`/api/v1/capture/loop/*`) from web/tablet.
+- Canonical API surface is versioned under `/api/v1` (legacy aliases removed).
+- Web UI is offline-safe in AP mode (Bootstrap/Socket.IO served locally from `static/vendor`).
 - The gallery/labeler work on images in:
   - `static/uploads/images`
   - labels in `static/uploads/labels`

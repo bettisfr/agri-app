@@ -4,6 +4,7 @@ const ROUTES = {
     getImages: "/api/v1/images",
     imageStatus: "/api/v1/images",
     deleteImage: "/api/v1/images/delete",
+    deleteAll: "/api/v1/images/delete-all",
     downloadAll: "/api/v1/download/dataset",
     downloadVisible: "/api/v1/download/dataset-selected",
     labelPage: "/label",
@@ -34,6 +35,7 @@ const dom = {
     paginationControls: () => document.getElementById("paginationControls"),
     downloadAllBtn: () => document.getElementById("downloadDatasetAllBtn"),
     downloadVisibleBtn: () => document.getElementById("downloadDatasetVisibleBtn"),
+    deleteAllBtn: () => document.getElementById("deleteAllBtn"),
     labeledFilterRadios: () => document.querySelectorAll('input[name="labeledFilter"]'),
     labelerOverlay: () => document.getElementById("labelerModalOverlay"),
     labelerFrame: () => document.getElementById("labelerModalFrame"),
@@ -380,6 +382,27 @@ async function deleteImage(filename) {
     }
 }
 
+async function deleteAllImages() {
+    try {
+        const response = await fetch(ROUTES.deleteAll, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+        });
+        const data = await response.json();
+
+        if (response.ok && (data.status === "success" || data.status === "partial")) {
+            galleryState.currentPage = 1;
+            await loadGalleryImages();
+            return;
+        }
+        alert(`Delete all failed: ${data.message || "unknown error"}`);
+    } catch (err) {
+        console.error("Delete all error:", err);
+        alert(`Delete all failed: ${err}`);
+    }
+}
+
 function lazyLoadImage(img) {
     const observer = new IntersectionObserver((entries, ioObserver) => {
         entries.forEach((entry) => {
@@ -599,6 +622,15 @@ function bindControls() {
                 console.error("Download visible failed:", err);
                 alert(`Download failed: ${err}`);
             });
+        });
+    }
+
+    const deleteAllBtn = dom.deleteAllBtn();
+    if (deleteAllBtn) {
+        deleteAllBtn.addEventListener("click", async () => {
+            const confirmed = await confirmDeleteDialog("Delete ALL images and related labels/metadata?");
+            if (!confirmed) return;
+            await deleteAllImages();
         });
     }
 

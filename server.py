@@ -687,6 +687,11 @@ def log_page():
     return render_template("log.html")
 
 
+@app.route("/health")
+def health_page():
+    return render_template("health.html")
+
+
 @app.route("/api/v1/logs")
 def api_logs():
     """
@@ -744,6 +749,135 @@ def api_logs():
                 "capture_esp_loop": {
                     "path": ESP_CAPTURE_LOOP_LOG,
                     "items": esp_tail,
+                },
+            },
+        }
+    )
+
+
+@app.route("/api/v1/health/checklist", methods=["GET"])
+def api_health_checklist():
+    """
+    Live health checklist for web dashboard.
+    Optional query:
+      - esp_base: ESP base URL, e.g. http://192.168.4.239
+    """
+    now_ts = int(time.time())
+    esp_base = (request.args.get("esp_base") or "").strip()
+
+    # Storage
+    try:
+        stat = os.statvfs(IMAGES_DIR)
+        total_bytes = stat.f_blocks * stat.f_frsize
+        free_bytes = stat.f_bavail * stat.f_frsize
+    except Exception:
+        total_bytes = 0
+        free_bytes = 0
+
+    free_ratio = (float(free_bytes) / float(total_bytes)) if total_bytes > 0 else 0.0
+    storage_status = "online" if free_bytes > 0 else "offline"
+    if storage_status == "online" and free_ratio < 0.05:
+        storage_status = "warn"
+
+    # Camera check (best effort)
+    camera_ok = False
+    camera_count = 0
+    camera_detail = "camera tool unavailable"
+    for cmd in (["rpicam-hello", "--list-cameras"], ["libcamera-hello", "--list-cameras"]):
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=os.path.dirname(__file__),
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+            out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+            lines = out.splitlines()
+            cam_lines = [ln for ln in lines if ln.strip() and ln.strip()[0].isdigit() and ":" in ln]
+            if proc.returncode == 0 and cam_lines:
+                camera_ok = True
+                camera_count = len(cam_lines)
+                camera_detail = f"{cmd[0]} detected {camera_count} camera(s)"
+                break
+            if "No cameras available" in out:
+                camera_detail = "no camera detected"
+        except Exception:
+            continue
+
+    # GPS check (short timeout)
+    gps_fix = None
+    try:
+        gps_fix = get_gps_fix(max_seconds=1.2)
+    except Exception:
+        gps_fix = None
+
+    # BME check
+    bme_data = None
+    try:
+        bme_data = get_bme280_reading()
+    except Exception:
+        bme_data = None
+
+    # ESP reachability (optional)
+    esp_reachable = None
+    esp_latency_ms = None
+    esp_msg = "not configured"
+    if esp_base:
+        try:
+            parsed = urllib.parse.urlsplit(esp_base)
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            started = time.time()
+            req = urllib.request.Request(f"{base}/status", method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                _ = resp.read()
+            esp_reachable = True
+            esp_latency_ms = int((time.time() - started) * 1000)
+            esp_msg = "reachable"
+        except Exception as e:
+            esp_reachable = False
+            esp_msg = str(e)
+
+    return jsonify(
+        {
+            "status": "success",
+            "timestamp": now_ts,
+            "checklist": {
+                "rpi": {
+                    "status": "online",
+                    "hostname": socket.gethostname(),
+                },
+                "esp": {
+                    "status": ("online" if esp_reachable else ("offline" if esp_reachable is False else "n/a")),
+                    "base": esp_base or None,
+                    "latency_ms": esp_latency_ms,
+                    "message": esp_msg,
+                },
+                "camera": {
+                    "status": ("online" if camera_ok else "offline"),
+                    "count": camera_count,
+                    "message": camera_detail,
+                },
+                "gps": {
+                    "status": ("online" if gps_fix else "offline"),
+                    "latitude": (gps_fix or {}).get("latitude"),
+                    "longitude": (gps_fix or {}).get("longitude"),
+                    "port": (gps_fix or {}).get("gps_port"),
+                },
+                "bme": {
+                    "status": ("online" if bme_data else "offline"),
+                    "temperature": (bme_data or {}).get("temperature"),
+                    "humidity": (bme_data or {}).get("humidity"),
+                    "pressure": (bme_data or {}).get("pressure"),
+                    "address": (bme_data or {}).get("bme_address"),
+                },
+                "storage": {
+                    "status": storage_status,
+                    "images_dir": IMAGES_DIR,
+                    "free_bytes": free_bytes,
+                    "total_bytes": total_bytes,
+                    "free_ratio": free_ratio,
                 },
             },
         }
@@ -1017,7 +1151,6 @@ def save_labels():
     )
 
 
-@app.route("/receive", methods=["POST"])
 @app.route("/api/v1/images/upload", methods=["POST"])
 def receive_image():
     """
@@ -1050,12 +1183,6 @@ def receive_image():
     )
 
     return jsonify({"message": "Image received", "metadata": metadata}), 200
-
-
-@app.route("/uploaded_images")
-def uploaded_images():
-    # Legacy endpoint kept for backward compatibility.
-    return jsonify(get_sorted_images(IMAGES_DIR))
 
 
 @app.route("/api/v1/health")
@@ -1861,36 +1988,6 @@ def api_esp_capture_loop_stop():
     return jsonify({"status": "success", "running": False, "message": "esp capture loop stopped"})
 
 
-@app.route("/image-status")
-def image_status():
-    """
-    Return labeling status for one image.
-
-    Query parameters:
-      - filename: image filename
-    """
-    filename_raw = request.args.get("filename", "")
-    filename = secure_filename(os.path.basename(filename_raw))
-    if not filename:
-        return jsonify({"status": "error", "message": "filename missing"}), 400
-
-    image_path = os.path.join(IMAGES_DIR, filename)
-    if not os.path.exists(image_path):
-        return jsonify({"status": "error", "message": "image not found"}), 404
-
-    metadata = extract_metadata(image_path)
-    return jsonify(
-        {
-            "status": "success",
-            "filename": filename,
-            "is_labeled": is_image_labeled(filename),
-            "labels_count": labels_count_for_image(filename),
-            "file_size_bytes": file_size_bytes_for_image(filename),
-            "metadata": metadata,
-        }
-    )
-
-
 @app.route("/api/v1/images/delete", methods=["POST"])
 def delete_image():
     """
@@ -2012,7 +2109,6 @@ def api_delete_all_images():
     )
 
 
-@app.route("/download-dataset")
 @app.route("/api/v1/download/dataset")
 def download_dataset():
     """
@@ -2081,7 +2177,6 @@ def download_dataset():
     )
 
 
-@app.route("/download-dataset-selected", methods=["POST"])
 @app.route("/api/v1/download/dataset-selected", methods=["POST"])
 def download_dataset_selected():
     """
@@ -2152,7 +2247,6 @@ def download_dataset_selected():
     )
 
 
-@app.route("/download-image-with-labels")
 @app.route("/api/v1/images/download-with-labels")
 def download_image_with_labels():
     """

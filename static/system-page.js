@@ -27,6 +27,11 @@
     const restartServerBtn = document.getElementById("restartServerBtn");
     const rebootBtn = document.getElementById("rebootBtn");
     const poweroffBtn = document.getElementById("poweroffBtn");
+    const confirmOverlay = document.getElementById("systemConfirmOverlay");
+    const confirmTitle = document.getElementById("systemConfirmTitle");
+    const confirmMessage = document.getElementById("systemConfirmMessage");
+    const confirmCancel = document.getElementById("systemConfirmCancel");
+    const confirmOk = document.getElementById("systemConfirmOk");
 
     function setMessage(line) {
         systemMessage.textContent = line;
@@ -194,6 +199,46 @@
         setMessage(`${label}: ${res.status} ${res.message || ""}`.trim());
     }
 
+    function confirmSystemDialog(message, title = "Confirm Action") {
+        return new Promise((resolve) => {
+            if (!confirmOverlay || !confirmMessage || !confirmCancel || !confirmOk || !confirmTitle) {
+                resolve(window.confirm(message));
+                return;
+            }
+
+            confirmTitle.textContent = title;
+            confirmMessage.textContent = message;
+            confirmOverlay.classList.add("open");
+            confirmOk.focus();
+
+            let done = false;
+            const cleanup = (result) => {
+                if (done) return;
+                done = true;
+                confirmOverlay.classList.remove("open");
+                confirmCancel.removeEventListener("click", onCancel);
+                confirmOk.removeEventListener("click", onConfirm);
+                confirmOverlay.removeEventListener("click", onBackdrop);
+                document.removeEventListener("keydown", onKeydown);
+                resolve(result);
+            };
+
+            const onCancel = () => cleanup(false);
+            const onConfirm = () => cleanup(true);
+            const onBackdrop = (e) => {
+                if (e.target === confirmOverlay) cleanup(false);
+            };
+            const onKeydown = (e) => {
+                if (e.key === "Escape") cleanup(false);
+            };
+
+            confirmCancel.addEventListener("click", onCancel);
+            confirmOk.addEventListener("click", onConfirm);
+            confirmOverlay.addEventListener("click", onBackdrop);
+            document.addEventListener("keydown", onKeydown);
+        });
+    }
+
     function wire() {
         wifiButtons.forEach((btn) => {
             btn.addEventListener("click", () => {
@@ -241,6 +286,8 @@
         });
 
         restartServerBtn.addEventListener("click", async () => {
+            const confirmed = await confirmSystemDialog("Restart backend server service?", "Restart Server");
+            if (!confirmed) return;
             try {
                 setBusy(true);
                 await doAction("/api/v1/system/server/restart", "Restart server");
@@ -252,7 +299,8 @@
         });
 
         rebootBtn.addEventListener("click", async () => {
-            if (!window.confirm("Reboot Raspberry Pi?")) return;
+            const confirmed = await confirmSystemDialog("Reboot Raspberry Pi?", "Reboot");
+            if (!confirmed) return;
             try {
                 setBusy(true);
                 await doAction("/api/v1/system/reboot", "Reboot");
@@ -264,7 +312,8 @@
         });
 
         poweroffBtn.addEventListener("click", async () => {
-            if (!window.confirm("Poweroff Raspberry Pi?")) return;
+            const confirmed = await confirmSystemDialog("Power off Raspberry Pi?", "Poweroff");
+            if (!confirmed) return;
             try {
                 setBusy(true);
                 await doAction("/api/v1/system/poweroff", "Poweroff");
