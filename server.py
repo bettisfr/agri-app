@@ -1647,6 +1647,8 @@ def api_esp_capture_proxy():
         helper,
         "--url",
         esp_capture_url,
+        "--set",
+        "quality=10",
         "--framesize",
         "qxga",
         "--timeout",

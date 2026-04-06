@@ -162,6 +162,10 @@ curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/stop
   - timed capture controlled via API (`/api/v1/capture/loop/*`) from web/tablet.
 - Canonical API surface is versioned under `/api/v1` (legacy aliases removed).
 - Web UI is offline-safe in AP mode (Bootstrap/Socket.IO served locally from `static/vendor`).
+- ESP capture preset used by backend one-shot proxy is stabilized to:
+  - `framesize=qxga`
+  - `quality=10`
+- Current ESP camera baseline is OV3660. OV5640 was tested and discarded in this setup due to recurrent optical artifacts.
 - The gallery/labeler work on images in:
   - `static/uploads/images`
   - labels in `static/uploads/labels`

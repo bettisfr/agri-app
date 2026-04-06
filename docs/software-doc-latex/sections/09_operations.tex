@@ -47,6 +47,8 @@ Metadata is persisted opportunistically. Operations should treat missing sensor 
 This avoids unnecessary full restarts when the issue is local to one sensor path.
 When ESP captures arrive without contextual values, operations now rely on metadata sidecar normalization/fallback at backend level to keep gallery behavior coherent while sensor diagnostics are performed.
 At runtime, GPS access is additionally protected by a backend lock plus short cache TTL, which lowers serial contention during high-frequency health polling.
+Operationally, the baseline setup currently keeps GT-U7 as active GPS module for data collection sessions, while NEO-6M remains an optional alternative for future retesting.
+For ESP camera operation, field runs currently keep OV3660 as primary module; OV5640 remains out of baseline due to image artifact patterns observed during comparative tests.
 
 \subsection{Storage Hygiene}
 Because persistence is file-based, dataset hygiene is an explicit operational task. The platform supports single delete, delete-all, and dataset export. Maintainers should define a cadence for cleanup or off-device archival to avoid emergency low-space events.

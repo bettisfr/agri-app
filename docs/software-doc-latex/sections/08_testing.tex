@@ -14,6 +14,8 @@ For ESP specifically, validation now includes a sidecar integrity check: each ne
 Sensor validation complements capture checks. GPS and BME280 are tested with dedicated scripts to verify device-level readability before end-to-end capture validation. API-level validation then confirms that contextual values are persisted in image metadata sidecars when available.
 
 In practical runs, GPS UART validation is considered successful when NMEA lines are readable from \texttt{/dev/serial0} and fix transitions to valid state (e.g., \texttt{RMC=A}, \texttt{GGA fix>0}). BME280 validation is considered successful when the sensor is visible on I2C (address \texttt{0x76}) and temperature/humidity/pressure values are returned by the dedicated test script.
+In the current hardware baseline, the operational GPS module is the previously used GT-U7, restored after comparative trials with a NEO-6M unit that showed unstable behavior in the tested field setup.
+For ESP32-CAM image capture validation, the operational baseline currently uses the OV3660 path with stable backend preset (\texttt{framesize=qxga}, \texttt{quality=10}). OV5640 trials were performed but excluded from baseline operation due to recurrent optical artifacts in field shots.
 
 Deletion and lifecycle validation are equally critical. Single-image and bulk deletion operations are checked for consistency across image binaries and related annotation files. The goal is to prevent orphaned artifacts and silent divergence between gallery and labeling state.
 
