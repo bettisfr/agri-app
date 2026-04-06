@@ -98,6 +98,7 @@
 
     async function apiJson(path, init = {}) {
         const res = await fetch(path, {
+            cache: "no-store",
             ...init,
             headers: {
                 "Content-Type": "application/json",
@@ -252,8 +253,9 @@
         refreshSystemBtn.addEventListener("click", async () => {
             try {
                 setBusy(true);
+                setMessage("Refreshing...");
                 await refreshStatus();
-                setMessage("System refreshed");
+                setMessage(`System refreshed at ${new Date().toLocaleTimeString()}`);
             } catch (e) {
                 setMessage(`Refresh failed: ${e.message}`);
             } finally {

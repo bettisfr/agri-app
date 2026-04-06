@@ -30,7 +30,10 @@ def parse_gga(sentence: str):
     # Example:
     # $GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47
     parts = sentence.split(",")
-    if len(parts) < 6:
+    if len(parts) < 7:
+        return None, None
+    # Fix quality: 0 = invalid
+    if parts[6] == "0":
         return None, None
     lat = parse_coordinates(parts[2], parts[3])
     lon = parse_coordinates(parts[4], parts[5])
@@ -39,7 +42,7 @@ def parse_gga(sentence: str):
 
 def build_parser():
     p = argparse.ArgumentParser(description="GPS serial test utility")
-    p.add_argument("--port", default="/dev/ttyACM0", help="Serial port (default: /dev/ttyACM0)")
+    p.add_argument("--port", default="/dev/serial0", help="Serial port (default: /dev/serial0)")
     p.add_argument("--baud", type=int, default=9600, help="Baud rate (default: 9600)")
     p.add_argument("--timeout", type=float, default=1.0, help="Serial timeout in seconds (default: 1.0)")
     p.add_argument("--max-seconds", type=int, default=30, help="Stop after N seconds if no fix (default: 30)")
@@ -68,7 +71,13 @@ def main():
 
     try:
         while True:
-            line = ser.readline().decode("ascii", errors="ignore").strip()
+            try:
+                line = ser.readline().decode("ascii", errors="ignore").strip()
+            except Exception as e:
+                # Intermittent UART glitch: keep running and retry.
+                print(f"[warn] serial glitch: {e}", file=sys.stderr)
+                time.sleep(0.2)
+                continue
             if not line:
                 if not args.watch and (time.time() - start) > args.max_seconds:
                     print("No fix within timeout window.")
@@ -102,4 +111,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

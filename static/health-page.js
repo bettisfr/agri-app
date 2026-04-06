@@ -46,11 +46,14 @@
     async function fetchChecklist() {
         if (busy) return;
         busy = true;
+        if (refreshBtn) refreshBtn.disabled = true;
+        if (updatedEl) updatedEl.textContent = "refreshing...";
         try {
             const esp = (espInput.value || "").trim();
             if (esp) localStorage.setItem(ESP_KEY, esp);
             const q = esp ? `?esp_base=${encodeURIComponent(esp)}` : "";
-            const res = await fetch(`/api/v1/health/checklist${q}`);
+            const sep = q ? "&" : "?";
+            const res = await fetch(`/api/v1/health/checklist${q}${sep}_ts=${Date.now()}`, { cache: "no-store" });
             const data = await res.json();
             if (!res.ok || data.status !== "success") {
                 throw new Error(data.message || `HTTP ${res.status}`);
@@ -90,6 +93,7 @@
             updatedEl.textContent = `error: ${e.message}`;
         } finally {
             busy = false;
+            if (refreshBtn) refreshBtn.disabled = false;
         }
     }
 

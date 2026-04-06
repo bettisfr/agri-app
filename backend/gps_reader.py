@@ -1,6 +1,12 @@
 import os
+import threading
 import time
 from typing import Any
+
+_GPS_LOCK = threading.Lock()
+_GPS_CACHE_KEY: tuple[tuple[str, ...], int] | None = None
+_GPS_CACHE_TS: float = 0.0
+_GPS_CACHE_FIX: dict[str, Any] | None = None
 
 
 def _parse_latlon(parts: list[str]) -> tuple[float | None, float | None]:
@@ -87,13 +93,19 @@ def get_gps_fix(
       - AGRIAPP_GPS_PORTS (comma separated)
       - AGRIAPP_GPS_BAUD
       - AGRIAPP_GPS_TIMEOUT
+      - AGRIAPP_GPS_CACHE_TTL
     """
+    global _GPS_CACHE_KEY
+    global _GPS_CACHE_TS
+    global _GPS_CACHE_FIX
+
     env_ports = os.getenv("AGRIAPP_GPS_PORTS", "")
     if ports is None:
         if env_ports.strip():
             ports = [p.strip() for p in env_ports.split(",") if p.strip()]
         else:
-            ports = ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/serial0"]
+            # Prefer GPIO UART first when available (Raspberry Pi wiring setup).
+            ports = ["/dev/serial0", "/dev/ttyACM0", "/dev/ttyUSB0"]
     if baud is None:
         try:
             baud = int(os.getenv("AGRIAPP_GPS_BAUD", "9600"))
@@ -104,11 +116,38 @@ def get_gps_fix(
             max_seconds = float(os.getenv("AGRIAPP_GPS_TIMEOUT", "4"))
         except Exception:
             max_seconds = 4.0
+    try:
+        cache_ttl = float(os.getenv("AGRIAPP_GPS_CACHE_TTL", "8"))
+    except Exception:
+        cache_ttl = 8.0
+    if cache_ttl < 0:
+        cache_ttl = 0.0
 
-    for port in ports:
-        if not os.path.exists(port):
-            continue
-        fix = _sample_port(port=port, baud=baud, max_seconds=max_seconds)
-        if fix:
-            return fix
-    return None
+    cache_key = (tuple(ports), int(baud))
+    now = time.monotonic()
+
+    with _GPS_LOCK:
+        if (
+            cache_ttl > 0
+            and _GPS_CACHE_KEY == cache_key
+            and (now - _GPS_CACHE_TS) <= cache_ttl
+        ):
+            if _GPS_CACHE_FIX is None:
+                return None
+            return dict(_GPS_CACHE_FIX)
+
+        fix: dict[str, Any] | None = None
+        for port in ports:
+            if not os.path.exists(port):
+                continue
+            fix = _sample_port(port=port, baud=baud, max_seconds=max_seconds)
+            if fix:
+                break
+
+        _GPS_CACHE_KEY = cache_key
+        _GPS_CACHE_TS = time.monotonic()
+        _GPS_CACHE_FIX = dict(fix) if fix else None
+
+        if _GPS_CACHE_FIX is None:
+            return None
+        return dict(_GPS_CACHE_FIX)

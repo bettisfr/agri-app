@@ -38,6 +38,7 @@ Current ESP unattended operation is implemented through the same ESP proxy captu
 Metadata is persisted opportunistically. Operations should treat missing sensor values as a diagnosable condition, not necessarily as a capture failure. If GPS or BME data disappears unexpectedly, the recommended sequence is:
 \begin{enumerate}
   \item verify physical wiring/serial visibility,
+  \item stop backend service if running manual GPS serial tests, to avoid dual readers on the same UART,
   \item run dedicated sensor test scripts,
   \item run one-shot capture and inspect generated metadata sidecar,
   \item only then escalate to service/device restart.
@@ -45,6 +46,7 @@ Metadata is persisted opportunistically. Operations should treat missing sensor 
 
 This avoids unnecessary full restarts when the issue is local to one sensor path.
 When ESP captures arrive without contextual values, operations now rely on metadata sidecar normalization/fallback at backend level to keep gallery behavior coherent while sensor diagnostics are performed.
+At runtime, GPS access is additionally protected by a backend lock plus short cache TTL, which lowers serial contention during high-frequency health polling.
 
 \subsection{Storage Hygiene}
 Because persistence is file-based, dataset hygiene is an explicit operational task. The platform supports single delete, delete-all, and dataset export. Maintainers should define a cadence for cleanup or off-device archival to avoid emergency low-space events.

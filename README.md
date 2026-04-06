@@ -89,6 +89,24 @@ PYENV_ROOT=/home/fra/pyenv
 # optional if you use pyenv manager (not needed for plain venv fallback)
 # PYENV_VERSION=agriapp-rpi
 CAPTURE_INTERVAL=300
+# GPS tuning (optional)
+# AGRIAPP_GPS_PORTS=/dev/serial0,/dev/ttyACM0,/dev/ttyUSB0
+# AGRIAPP_GPS_BAUD=9600
+# AGRIAPP_GPS_TIMEOUT=4
+# AGRIAPP_GPS_CACHE_TTL=8
+```
+
+## GPS Notes
+
+- Backend GPS reads are now guarded by a process lock and short cache TTL to reduce serial contention.
+- Default UART preference is `"/dev/serial0"` (GPIO wiring).
+- For manual GPS diagnostics, stop the server first to guarantee exclusive serial access:
+
+```bash
+systemctl --user stop agriapp-server.service
+cd ~/agri-app
+python3 test/test-gps.py --port /dev/serial0 --baud 9600 --watch --raw
+systemctl --user start agriapp-server.service
 ```
 
 ## Boot Autostart (Systemd User Services)

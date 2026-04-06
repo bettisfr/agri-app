@@ -43,6 +43,8 @@ An implementation refinement introduced during field testing concerns ESP unatte
 
 A notable implementation choice is best-effort metadata enrichment. After each successful capture, the backend attempts to enrich the image with GPS and BME280 values and writes a sidecar JSON. Capture completion is never blocked by missing sensors: if sensors are unavailable, the image remains valid and metadata fields are populated as \texttt{null}. For ESP artifacts, metadata sidecars are additionally normalized at gallery-read time, so missing sidecars from legacy or transitional runs are automatically repaired.
 
+Recent hardening focused on GPS serial access under concurrent API traffic. The GPS reader now uses a process-level lock and short TTL cache, so repeated calls (for example health checks plus capture paths) do not repeatedly open/read the UART in parallel. This significantly reduces contention symptoms on \texttt{/dev/serial0} and stabilizes metadata enrichment during normal operations.
+
 \subsection{Web Frontend Implementation}
 The web frontend is implemented with Flask templates plus static CSS/JavaScript modules. Its architecture separates gallery concerns from labeling concerns, reducing coupling and allowing iterative UI work without destabilizing annotation behavior.
 
