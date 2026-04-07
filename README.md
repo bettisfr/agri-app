@@ -162,6 +162,8 @@ curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/stop
   - timed capture controlled via API (`/api/v1/capture/loop/*`) from web/tablet.
 - Canonical API surface is versioned under `/api/v1` (legacy aliases removed).
 - Web UI is offline-safe in AP mode (Bootstrap/Socket.IO served locally from `static/vendor`).
+- Web UI is currently operated in `RPi-only` mode (ESP controls hidden from Capture/System/Health pages to reduce field complexity).
+- ESP backend endpoints remain available for diagnostics/experiments (`/api/v1/capture/esp/*`, `/api/v1/esp/status`).
 - ESP capture preset used by backend one-shot proxy is stabilized to:
   - `framesize=qxga`
   - `quality=10`

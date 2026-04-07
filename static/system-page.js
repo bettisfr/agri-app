@@ -1,7 +1,6 @@
 (() => {
     const PREF_WIFI_KEY = "agriapp_preferred_wifi";
     const LAST_WIFI_URL_KEY = "agriapp_last_wifi_url";
-    const ESP_BASE_KEY = "agriapp_capture_esp_base";
     const defaultWifiProfiles = ["preconfigured", "castelnuovo", "hotspot"];
 
     const state = {
@@ -16,7 +15,6 @@
     const wifiBadge = document.getElementById("wifiBadge");
     const apBadge = document.getElementById("apBadge");
     const rpiStatusBadge = document.getElementById("rpiStatusBadge");
-    const espStatusBadge = document.getElementById("espStatusBadge");
     const accessUrlLink = document.getElementById("accessUrlLink");
     const systemMessage = document.getElementById("systemMessage");
 
@@ -155,26 +153,6 @@
 
         // RPi status (same backend)
         setOnlineBadge(rpiStatusBadge, true, "offline", "online");
-
-        // ESP status (via backend probe to avoid CORS)
-        const espBase = (localStorage.getItem(ESP_BASE_KEY) || "").trim();
-        if (!espBase) {
-            espStatusBadge.style.fontWeight = "700";
-            espStatusBadge.style.color = "#6c757d";
-            espStatusBadge.textContent = "n/a";
-        } else {
-            try {
-                const espRes = await apiJson(`/api/v1/esp/status?esp_base=${encodeURIComponent(espBase)}`);
-                if (espRes.reachable) {
-                    const ms = typeof espRes.latency_ms === "number" ? `${espRes.latency_ms} ms` : "ok";
-                    setOnlineBadge(espStatusBadge, true, "offline", `online (${ms})`);
-                } else {
-                    setOnlineBadge(espStatusBadge, false, "offline", "online");
-                }
-            } catch (_) {
-                setOnlineBadge(espStatusBadge, false, "offline", "online");
-            }
-        }
     }
 
     async function setNetworkMode(mode) {

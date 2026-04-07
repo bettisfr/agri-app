@@ -25,14 +25,14 @@ Operational safety remains important: reboot and poweroff are destructive from a
 On the Android side, these operations are grouped in the \texttt{System} tab using separate cards (\texttt{Storage}, \texttt{WiFi}, \texttt{Server}, \texttt{Power}). This reduces operator error by preventing accidental confusion between informational state (free storage), network-switch actions, and destructive power controls.
 
 \subsection{Capture Operations}
-Capture management now has two complementary modes:
+Capture management currently prioritizes the Raspberry Pi path in day-to-day operation:
 \begin{itemize}
-  \item one-shot capture for immediate validation (RPi or ESP source),
-  \item unattended loop capture controlled by \texttt{/api/v1/capture/loop/*} (RPi) and \texttt{/api/v1/capture/esp/loop/*} (ESP).
+  \item one-shot capture for immediate validation (\texttt{RPi}),
+  \item unattended loop capture controlled by \texttt{/api/v1/capture/loop/*} (\texttt{RPi}).
 \end{itemize}
 
-For unattended operation, interval selection is an operational parameter (e.g., 30s and minute-scale presets in mobile UI or explicit API payloads). Start/stop semantics are explicit; operators should always verify loop status after transitions. In the Android control app, operators can start loops for \texttt{RPi}, \texttt{ESP}, or \texttt{Both}, while status remains source-specific.
-Current ESP unattended operation is implemented through the same ESP proxy capture API used for one-shot, so metadata persistence behavior remains aligned between manual and automatic captures.
+For unattended operation, interval selection is an operational parameter (e.g., 30s and minute-scale presets in mobile UI or explicit API payloads). Start/stop semantics are explicit; operators should always verify loop status after transitions.
+ESP remains available as an optional backend diagnostic path, but it is not part of the primary web operational surface in the current baseline.
 
 \subsection{Metadata Operations (GPS/BME280)}
 Metadata is persisted opportunistically. Operations should treat missing sensor values as a diagnosable condition, not necessarily as a capture failure. If GPS or BME data disappears unexpectedly, the recommended sequence is:
@@ -82,7 +82,7 @@ This order minimizes downtime and preserves diagnostic signal.
 \subsection{Operational Logging}
 Effective troubleshooting depends on correlated logs. The project uses a combination of backend logs, systemd status/logs, and Android in-app logs. Operators should record at least three contextual tags when reporting incidents: active network mode, active host/IP, and last successful action.
 Recent app iterations keep in-app logging structured but concise (discovery milestones, network switch milestones, loop lifecycle changes, and shot outcomes). Detailed contextual values are expected to be inspected from metadata artifacts and gallery views rather than verbose control-log lines.
-On the web side, runtime logging is exposed through a single unified stream, avoiding split views between server and ESP sections and reducing operator confusion during active troubleshooting.
+On the web side, runtime logging is exposed through a single unified stream focused on active RPi operations, avoiding split views and reducing operator confusion during active troubleshooting.
 
 \subsection{Maintenance Outlook}
 Maintenance effort should continue reducing legacy complexity. The most valuable ongoing work is progressive legacy endpoint retirement, tighter contract tests on \texttt{/api/v1}, and continued UI/ops simplification so that field operation stays predictable even as features grow.

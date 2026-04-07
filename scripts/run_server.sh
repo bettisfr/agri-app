@@ -39,4 +39,4 @@ else
   exit 1
 fi
 
-exec python server.py
+exec python -B server.py

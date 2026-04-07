@@ -56,8 +56,12 @@ ESP_CAPTURE_LOOP_PROC = None
 ESP_CAPTURE_LOOP_STARTED_AT = None
 ESP_CAPTURE_LOOP_INTERVAL = None
 ESP_CAPTURE_LOOP_BASE = None
+ESP_CAPTURE_LOOP_MODE = None
+ESP_CAPTURE_LOOP_PORT = None
 ESP_CAPTURE_LOOP_LOCK = threading.Lock()
 ESP_CAPTURE_LOOP_LOG = os.path.join("/tmp", "agriapp-esp-capture-loop.log")
+ESP_ONESHOT_LOCK = threading.Lock()
+RUNTIME_EVENTS_LOG = os.path.join("/tmp", "agriapp-runtime-events.log")
 
 
 def _capture_loop_script_path() -> str:
@@ -66,6 +70,16 @@ def _capture_loop_script_path() -> str:
 
 def _capture_esp_helper_path() -> str:
     return os.path.join(os.path.dirname(__file__), "scripts", "capture_esp.py")
+
+
+def _append_runtime_event(source: str, message: str) -> None:
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{ts}] [{source}] {message}\n"
+    try:
+        with open(RUNTIME_EVENTS_LOG, "a", buffering=1, encoding="utf-8") as f:
+            f.write(line)
+    except Exception:
+        pass
 
 
 def _capture_loop_is_running() -> bool:
@@ -121,6 +135,8 @@ def _capture_esp_loop_status_payload():
         "started_at_ts": ESP_CAPTURE_LOOP_STARTED_AT if running else None,
         "next_capture_in_seconds": next_capture_in_seconds,
         "esp_base": ESP_CAPTURE_LOOP_BASE if running else None,
+        "esp_mode": ESP_CAPTURE_LOOP_MODE if running else None,
+        "esp_port": ESP_CAPTURE_LOOP_PORT if running else None,
         "log_path": ESP_CAPTURE_LOOP_LOG,
     }
 
@@ -295,12 +311,46 @@ def remove_thumbnails_for_image(filename: str) -> int:
     return removed
 
 
-def image_dimensions_for_image(filename: str) -> tuple[int, int]:
+def list_esp_serial_ports() -> list[str]:
+    """
+    Best-effort list of ESP serial candidates on Linux.
+    Ordered with ttyUSB* first, then ttyACM*.
+    """
+    ports: list[str] = []
+    for pattern in ("/dev/ttyUSB*", "/dev/ttyACM*"):
+        for path in sorted(glob.glob(pattern)):
+            if os.path.exists(path):
+                ports.append(path)
+    return ports
+
+
+def resolve_esp_serial_port(requested_port: str | None = None) -> str:
+    """
+    Resolve serial port for ESP capture/status.
+    Priority:
+      1) explicitly requested /dev path
+      2) ESP_SERIAL_PORT env var
+      3) first detected candidate
+      4) fallback /dev/ttyUSB0
+    """
+    if requested_port:
+        requested = requested_port.strip()
+        if requested.startswith("/dev/"):
+            return requested
+    env_port = (os.environ.get("ESP_SERIAL_PORT") or "").strip()
+    if env_port.startswith("/dev/"):
+        return env_port
+    detected = list_esp_serial_ports()
+    if detected:
+        return detected[0]
+    return "/dev/ttyUSB0"
+
+
+def image_dimensions_for_path(path: str) -> tuple[int, int]:
     """
     Best-effort image dimension detection (JPEG/PNG).
     Returns (width, height) or (0, 0) on failure.
     """
-    path = os.path.join(IMAGES_DIR, filename)
     try:
         with open(path, "rb") as f:
             header = f.read(32)
@@ -350,6 +400,11 @@ def image_dimensions_for_image(filename: str) -> tuple[int, int]:
         pass
 
     return 0, 0
+
+
+def image_dimensions_for_image(filename: str) -> tuple[int, int]:
+    path = os.path.join(IMAGES_DIR, filename)
+    return image_dimensions_for_path(path)
 
 
 def run_network_mode_script(args_list, extra_env: dict | None = None):
@@ -715,6 +770,7 @@ def api_logs():
         except Exception:
             return []
 
+    runtime_tail = tail_lines(RUNTIME_EVENTS_LOG, lines)
     capture_tail = tail_lines(CAPTURE_LOOP_LOG, lines)
     esp_tail = tail_lines(ESP_CAPTURE_LOOP_LOG, lines)
 
@@ -750,6 +806,10 @@ def api_logs():
                     "path": ESP_CAPTURE_LOOP_LOG,
                     "items": esp_tail,
                 },
+                "runtime_events": {
+                    "path": RUNTIME_EVENTS_LOG,
+                    "items": runtime_tail,
+                },
             },
         }
     )
@@ -759,11 +819,8 @@ def api_logs():
 def api_health_checklist():
     """
     Live health checklist for web dashboard.
-    Optional query:
-      - esp_base: ESP base URL, e.g. http://192.168.4.239
     """
     now_ts = int(time.time())
-    esp_base = (request.args.get("esp_base") or "").strip()
 
     # Storage
     try:
@@ -820,24 +877,16 @@ def api_health_checklist():
     except Exception:
         bme_data = None
 
-    # ESP reachability (optional)
-    esp_reachable = None
-    esp_latency_ms = None
-    esp_msg = "not configured"
-    if esp_base:
-        try:
-            parsed = urllib.parse.urlsplit(esp_base)
-            base = f"{parsed.scheme}://{parsed.netloc}"
-            started = time.time()
-            req = urllib.request.Request(f"{base}/status", method="GET")
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                _ = resp.read()
-            esp_reachable = True
-            esp_latency_ms = int((time.time() - started) * 1000)
-            esp_msg = "reachable"
-        except Exception as e:
-            esp_reachable = False
-            esp_msg = str(e)
+    # ESP serial USB check
+    detected_esp_ports = list_esp_serial_ports()
+    esp_port = resolve_esp_serial_port()
+    esp_reachable = os.path.exists(esp_port)
+    if esp_reachable:
+        esp_msg = "serial port available"
+    elif detected_esp_ports:
+        esp_msg = "serial candidates found but selected port unavailable"
+    else:
+        esp_msg = "no serial USB device detected"
 
     return jsonify(
         {
@@ -849,9 +898,9 @@ def api_health_checklist():
                     "hostname": socket.gethostname(),
                 },
                 "esp": {
-                    "status": ("online" if esp_reachable else ("offline" if esp_reachable is False else "n/a")),
-                    "base": esp_base or None,
-                    "latency_ms": esp_latency_ms,
+                    "status": ("online" if esp_reachable else "offline"),
+                    "port": esp_port,
+                    "detected_ports": detected_esp_ports,
                     "message": esp_msg,
                 },
                 "camera": {
@@ -915,39 +964,30 @@ def _journal_tail(lines: int):
 def _build_unified_log_text(lines: int):
     server_tail = _journal_tail(lines)
     capture_tail = _tail_lines(CAPTURE_LOOP_LOG, lines)
-    esp_tail = _tail_lines(ESP_CAPTURE_LOOP_LOG, lines)
+    runtime_tail = _tail_lines(RUNTIME_EVENTS_LOG, lines)
     rpi_status = _capture_loop_status_payload()
 
-    parts = []
-    parts.append("===== SERVER (agriapp-server.service) =====")
-    parts.extend(server_tail if server_tail else ["(no entries)"])
-    parts.append("")
+    rpi_running = bool(rpi_status.get("running"))
     rpi_interval = rpi_status.get("interval_seconds")
-    rpi_interval_part = f", interval={rpi_interval}s" if rpi_interval else ""
-    parts.append(
-        f"===== RPI LOOP ({CAPTURE_LOOP_LOG}) ===== "
-        f"[status: {'running' if rpi_status.get('running') else 'stopped'}"
-        f"{rpi_interval_part}]"
-    )
-    if capture_tail:
-        parts.extend(capture_tail)
-    else:
-        parts.append("(no entries; start auto capture RPi to populate this log)")
 
-    if esp_tail:
-        esp_status = _capture_esp_loop_status_payload()
-        esp_interval = esp_status.get("interval_seconds")
-        esp_base = esp_status.get("esp_base")
-        esp_interval_part = f", interval={esp_interval}s" if esp_interval else ""
-        esp_base_part = f", base={esp_base}" if esp_base else ""
-        parts.append("")
-        parts.append(
-            f"===== ESP LOOP ({ESP_CAPTURE_LOOP_LOG}) ===== "
-            f"[status: {'running' if esp_status.get('running') else 'stopped'}"
-            f"{esp_interval_part}"
-            f"{esp_base_part}]"
-        )
-        parts.extend(esp_tail)
+    rpi_state = "running" if rpi_running else "stopped"
+    if rpi_interval:
+        rpi_state += f" ({rpi_interval}s)"
+
+    parts = [f"Status: RPi loop {rpi_state}", ""]
+
+    # Hide ESP references from UI stream while keeping backend capabilities intact.
+    filtered_runtime_tail = [ln for ln in runtime_tail if "[ESP]" not in ln]
+
+    if server_tail:
+        parts.extend([f"[SERVER] {ln}" for ln in server_tail])
+    if filtered_runtime_tail:
+        parts.extend([f"[EVENT] {ln}" for ln in filtered_runtime_tail])
+    if capture_tail:
+        parts.extend([f"[RPI] {ln}" for ln in capture_tail])
+
+    if len(parts) <= 2:
+        parts.append("No log entries yet.")
     return "\n".join(parts)
 
 
@@ -1180,6 +1220,7 @@ def receive_image():
             "filename": filename,
             "metadata": metadata,
         },
+        namespace="/",
     )
 
     return jsonify({"message": "Image received", "metadata": metadata}), 200
@@ -1436,6 +1477,7 @@ def api_image_status(filename):
         return jsonify({"status": "error", "message": "image not found"}), 404
 
     metadata = extract_metadata(image_path)
+    width, height = image_dimensions_for_image(clean_name)
     return jsonify(
         {
             "status": "success",
@@ -1443,6 +1485,8 @@ def api_image_status(filename):
             "is_labeled": is_image_labeled(clean_name),
             "labels_count": labels_count_for_image(clean_name),
             "file_size_bytes": file_size_bytes_for_image(clean_name),
+            "image_width": width,
+            "image_height": height,
             "metadata": metadata,
         }
     )
@@ -1487,6 +1531,7 @@ def api_capture_oneshot():
         return jsonify({"status": "error", "message": "capture_rpi.sh not found"}), 500
 
     cmd = ["bash", script_path, "--oneshot"]
+    _append_runtime_event("RPI", "oneshot requested")
     try:
         proc = subprocess.run(
             cmd,
@@ -1504,6 +1549,7 @@ def api_capture_oneshot():
     stdout = (proc.stdout or "").strip()
     stderr = (proc.stderr or "").strip()
     if proc.returncode != 0:
+        _append_runtime_event("RPI", f"oneshot failed rc={proc.returncode}")
         return jsonify(
             {
                 "status": "error",
@@ -1519,6 +1565,17 @@ def api_capture_oneshot():
     if latest_filename:
         latest_path = os.path.join(IMAGES_DIR, latest_filename)
         latest_metadata = enrich_image_with_live_metadata(latest_path)
+        socketio.emit(
+            "new_image",
+            {
+                "filename": latest_filename,
+                "metadata": latest_metadata,
+            },
+            namespace="/",
+        )
+        _append_runtime_event("RPI", f"oneshot ok -> {latest_filename}")
+    else:
+        _append_runtime_event("RPI", "oneshot completed but no latest filename found")
 
     return jsonify(
         {
@@ -1619,137 +1676,128 @@ def api_esp_capture_proxy():
     Proxy one JPEG capture from ESP-CAM through Raspberry Pi.
     Useful when tablet cannot reliably reach ESP directly.
     """
-    esp_base = (request.args.get("esp_base") or "").strip()
-    if not esp_base:
-        return jsonify({"status": "error", "message": "missing esp_base"}), 400
+    esp_mode = (request.args.get("esp_mode") or request.args.get("mode") or "serial").strip().lower()
+    if esp_mode not in ("serial",):
+        return jsonify({"status": "error", "message": "invalid esp_mode"}), 400
 
-    try:
-        parsed = urllib.parse.urlsplit(esp_base)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            return jsonify({"status": "error", "message": "invalid esp_base"}), 400
+    esp_port = resolve_esp_serial_port(request.args.get("esp_port"))
+    if not esp_port.startswith("/dev/"):
+        return jsonify({"status": "error", "message": "invalid esp_port"}), 400
+    if not os.path.exists(esp_port):
+        return jsonify({"status": "error", "message": f"esp serial port not found: {esp_port}"}), 400
 
-        host = parsed.hostname or ""
-        ip_obj = ipaddress.ip_address(host)
-        if not ip_obj.is_private:
-            return jsonify({"status": "error", "message": "esp_base must be private IP"}), 400
-    except Exception:
-        return jsonify({"status": "error", "message": "invalid esp_base"}), 400
-
-    base = f"{parsed.scheme}://{parsed.netloc}"
-    esp_capture_url = f"{base}/capture"
     helper = _capture_esp_helper_path()
     if not os.path.exists(helper):
         return jsonify({"status": "error", "message": "capture_esp.py helper not found"}), 500
 
+    if not ESP_ONESHOT_LOCK.acquire(blocking=False):
+        return jsonify({"status": "error", "message": "esp capture busy"}), 409
+
+    proc = None
+    strict_stdout = ""
+    strict_stderr = ""
     tmp_name = os.path.join("/tmp", f"esp_api_{int(time.time() * 1000)}.jpg")
-    strict_cmd = [
-        "python3",
-        helper,
-        "--url",
-        esp_capture_url,
-        "--set",
-        "quality=10",
-        "--framesize",
-        "qxga",
-        "--timeout",
-        "20",
-        "--out",
-        tmp_name,
-    ]
-    fallback_cmd = [
-        "python3",
-        helper,
-        "--url",
-        esp_capture_url,
-        "--timeout",
-        "20",
-        "--out",
-        tmp_name,
-    ]
-    lowres_cmd = [
-        "python3",
-        helper,
-        "--url",
-        esp_capture_url,
-        "--framesize",
-        "vga",
-        "--timeout",
-        "12",
-        "--out",
-        tmp_name,
-    ]
-
     try:
-        proc = subprocess.run(
-            strict_cmd,
-            cwd=os.path.dirname(__file__),
-            capture_output=True,
-            text=True,
-            timeout=45,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return jsonify({"status": "error", "message": "esp capture timeout"}), 504
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"esp capture failed: {e}"}), 500
+        _append_runtime_event("ESP", f"oneshot requested port={esp_port}")
+        attempts = [
+            ("no-reset", ["--no-reset"], 180),
+        ]
+        for idx, (label, extra_args, run_timeout) in enumerate(attempts, start=1):
+            cmd = [
+                "python3",
+                helper,
+                esp_port,
+                tmp_name,
+                "--baud",
+                "115200",
+                "--timeout",
+                "140",
+                *extra_args,
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=os.path.dirname(__file__),
+                    capture_output=True,
+                    text=True,
+                    timeout=run_timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                strict_stdout = f"[attempt {idx}/{len(attempts)} {label}] timeout"
+                strict_stderr = strict_stdout
+                _append_runtime_event("ESP", f"oneshot attempt {label} timeout")
+                continue
+            except Exception as e:
+                strict_stdout = ""
+                strict_stderr = f"[attempt {idx}/{len(attempts)} {label}] {e}"
+                _append_runtime_event("ESP", f"oneshot attempt {label} exception: {e}")
+                continue
 
-    used_fallback = False
-    used_lowres = False
-    strict_stdout = (proc.stdout or "")
-    strict_stderr = (proc.stderr or "")
-    if proc.returncode != 0:
-        # Some firmware variants intermittently reject /control (framesize/quality).
-        # Retry a plain /capture first to avoid hard-failing when controls fail.
-        try:
-            proc = subprocess.run(
-                fallback_cmd,
-                cwd=os.path.dirname(__file__),
-                capture_output=True,
-                text=True,
-                timeout=45,
-                check=False,
-            )
-            used_fallback = proc.returncode == 0
-        except subprocess.TimeoutExpired:
-            return jsonify({"status": "error", "message": "esp capture timeout"}), 504
-        except Exception as e:
-            return jsonify({"status": "error", "message": f"esp capture failed: {e}"}), 500
+            strict_stdout = (proc.stdout or "")
+            strict_stderr = (proc.stderr or "")
+            if proc.returncode == 0 and os.path.exists(tmp_name) and os.path.getsize(tmp_name) >= 1024:
+                _append_runtime_event("ESP", f"oneshot attempt {label} ok")
+                break
 
-    if proc.returncode != 0:
-        # Final safety net: force a low-res frame to keep auto-loop alive on weak links.
-        try:
-            proc = subprocess.run(
-                lowres_cmd,
-                cwd=os.path.dirname(__file__),
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-            used_lowres = proc.returncode == 0
-        except subprocess.TimeoutExpired:
-            return jsonify({"status": "error", "message": "esp capture timeout"}), 504
-        except Exception as e:
-            return jsonify({"status": "error", "message": f"esp capture failed: {e}"}), 500
+            _append_runtime_event("ESP", f"oneshot attempt {label} failed rc={proc.returncode}")
+            try:
+                if os.path.exists(tmp_name):
+                    os.remove(tmp_name)
+            except Exception:
+                pass
+            time.sleep(0.1)
 
-    if proc.returncode != 0:
+        if proc is None:
+            _append_runtime_event("ESP", "oneshot failed: all attempts timed out")
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "esp capture timed out on all attempts",
+                    "esp_mode": esp_mode,
+                    "esp_port": esp_port,
+                }
+            ), 504
+
+        if proc.returncode != 0:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "esp capture command failed",
+                    "esp_mode": esp_mode,
+                    "returncode": proc.returncode,
+                    "stdout": (proc.stdout or "")[-500:],
+                    "stderr": (proc.stderr or "")[-500:],
+                    "strict_stdout": strict_stdout[-500:],
+                    "strict_stderr": strict_stderr[-500:],
+                }
+            ), 502
+
+        if not os.path.exists(tmp_name) or os.path.getsize(tmp_name) < 1024:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "esp capture produced invalid output",
+                    "esp_mode": esp_mode,
+                    "stdout": (proc.stdout or "")[-500:],
+                    "stderr": (proc.stderr or "")[-500:],
+                }
+            ), 502
+    finally:
+        ESP_ONESHOT_LOCK.release()
+
+    width, height = image_dimensions_for_path(tmp_name)
+    # QXGA strict mode only: 2048x1536 (or transposed if firmware rotates output).
+    if (width, height) not in ((2048, 1536), (1536, 2048)):
+        _append_runtime_event("ESP", f"oneshot rejected non-qxga {width}x{height}")
         return jsonify(
             {
                 "status": "error",
-                "message": "esp capture command failed",
-                "returncode": proc.returncode,
-                "stdout": (proc.stdout or "")[-500:],
-                "stderr": (proc.stderr or "")[-500:],
-                "strict_stdout": strict_stdout[-500:],
-                "strict_stderr": strict_stderr[-500:],
-            }
-        ), 502
-
-    if not os.path.exists(tmp_name) or os.path.getsize(tmp_name) < 1024:
-        return jsonify(
-            {
-                "status": "error",
-                "message": "esp capture produced invalid output",
+                "message": "esp capture is not QXGA",
+                "esp_mode": esp_mode,
+                "expected": "2048x1536",
+                "actual_width": width,
+                "actual_height": height,
                 "stdout": (proc.stdout or "")[-500:],
                 "stderr": (proc.stderr or "")[-500:],
             }
@@ -1798,6 +1846,8 @@ def api_esp_capture_proxy():
     except Exception:
         # Keep response usable even if local save fails.
         saved_name = ""
+    if saved_name:
+        _append_runtime_event("ESP", f"oneshot ok -> {saved_name} ({width}x{height})")
 
     resp = send_file(
         io.BytesIO(data),
@@ -1805,11 +1855,15 @@ def api_esp_capture_proxy():
         as_attachment=False,
         download_name="esp_capture.jpg",
     )
-    if used_fallback:
-        resp.headers["X-AgriApp-Esp-Fallback"] = "1"
-    if used_lowres:
-        resp.headers["X-AgriApp-Esp-LowRes"] = "1"
     if saved_name:
+        socketio.emit(
+            "new_image",
+            {
+                "filename": saved_name,
+                "metadata": saved_metadata,
+            },
+            namespace="/",
+        )
         resp.headers["X-AgriApp-Filename"] = saved_name
         if saved_metadata.get("latitude") is not None:
             resp.headers["X-AgriApp-Latitude"] = str(saved_metadata["latitude"])
@@ -1827,14 +1881,40 @@ def api_esp_capture_proxy():
 @app.route("/api/v1/esp/status", methods=["GET"])
 def api_esp_status():
     """
-    Probe ESP status endpoint through the server to avoid client-side CORS issues.
-    Query params:
-      - esp_base: e.g. http://192.168.4.239
+    ESP status probe (serial-only path by default).
+    Query params (optional):
+      - esp_mode: serial|http (default serial)
+      - esp_port: serial device path (default /dev/ttyUSB0)
+      - esp_base: legacy HTTP base (only if esp_mode=http)
     """
+    esp_mode = (request.args.get("esp_mode") or "serial").strip().lower()
+    if esp_mode == "serial":
+        detected_esp_ports = list_esp_serial_ports()
+        esp_port = resolve_esp_serial_port(request.args.get("esp_port"))
+        if not esp_port.startswith("/dev/"):
+            return jsonify({"status": "error", "message": "invalid esp_port"}), 400
+        reachable = os.path.exists(esp_port)
+        if reachable:
+            msg = "serial port available"
+        elif detected_esp_ports:
+            msg = "serial candidates found but selected port unavailable"
+        else:
+            msg = "no serial USB device detected"
+        return jsonify(
+            {
+                "status": "success",
+                "reachable": reachable,
+                "esp_mode": "serial",
+                "esp_port": esp_port,
+                "detected_ports": detected_esp_ports,
+                "message": msg,
+            }
+        )
+
+    # Legacy HTTP probe kept for compatibility.
     esp_base = (request.args.get("esp_base") or "").strip()
     if not esp_base:
         return jsonify({"status": "error", "message": "missing esp_base"}), 400
-
     try:
         parsed = urllib.parse.urlsplit(esp_base)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
@@ -1864,6 +1944,7 @@ def api_esp_status():
                 {
                     "status": "success",
                     "reachable": True,
+                    "esp_mode": "http",
                     "esp_base": base,
                     "latency_ms": latency_ms,
                     "http_status": getattr(resp, "status", 200),
@@ -1876,6 +1957,7 @@ def api_esp_status():
             {
                 "status": "success",
                 "reachable": False,
+                "esp_mode": "http",
                 "esp_base": base,
                 "latency_ms": latency_ms,
                 "message": str(e),
@@ -1892,10 +1974,11 @@ def api_esp_capture_loop_status():
 
 @app.route("/api/v1/capture/esp/loop/start", methods=["POST"])
 def api_esp_capture_loop_start():
-    global ESP_CAPTURE_LOOP_PROC, ESP_CAPTURE_LOOP_STARTED_AT, ESP_CAPTURE_LOOP_INTERVAL, ESP_CAPTURE_LOOP_BASE
+    global ESP_CAPTURE_LOOP_PROC, ESP_CAPTURE_LOOP_STARTED_AT, ESP_CAPTURE_LOOP_INTERVAL, ESP_CAPTURE_LOOP_BASE, ESP_CAPTURE_LOOP_MODE, ESP_CAPTURE_LOOP_PORT
     data = request.get_json(silent=True) or {}
     interval_raw = data.get("interval_seconds", 300)
-    esp_base = (data.get("esp_base") or "").strip()
+    esp_mode = (data.get("esp_mode") or data.get("mode") or "serial").strip().lower()
+    esp_port = resolve_esp_serial_port(data.get("esp_port"))
 
     try:
         interval = int(interval_raw)
@@ -1903,26 +1986,20 @@ def api_esp_capture_loop_start():
         return jsonify({"status": "error", "message": "invalid interval_seconds"}), 400
     if interval < 5 or interval > 86400:
         return jsonify({"status": "error", "message": "interval_seconds must be in [5, 86400]"}), 400
-    if not esp_base:
-        return jsonify({"status": "error", "message": "missing esp_base"}), 400
+    if esp_mode not in ("serial",):
+        return jsonify({"status": "error", "message": "invalid esp_mode"}), 400
 
-    try:
-        parsed = urllib.parse.urlsplit(esp_base)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            return jsonify({"status": "error", "message": "invalid esp_base"}), 400
-        host = parsed.hostname or ""
-        ip_obj = ipaddress.ip_address(host)
-        if not ip_obj.is_private:
-            return jsonify({"status": "error", "message": "esp_base must be private IP"}), 400
-    except Exception:
-        return jsonify({"status": "error", "message": "invalid esp_base"}), 400
+    if not esp_port.startswith("/dev/"):
+        return jsonify({"status": "error", "message": "invalid esp_port"}), 400
+    if not os.path.exists(esp_port):
+        return jsonify({"status": "error", "message": f"esp serial port not found: {esp_port}"}), 400
+    base = None
+    query = f"esp_mode=serial&esp_port={urllib.parse.quote(esp_port, safe='')}"
 
-    base = f"{parsed.scheme}://{parsed.netloc}"
-    esp_base_enc = urllib.parse.quote(base, safe="")
     loop_cmd = (
         f'while true; do '
         f'curl -fsS --max-time 50 '
-        f'"http://127.0.0.1:5000/api/v1/capture/esp/oneshot?esp_base={esp_base_enc}" '
+        f'"http://127.0.0.1:5000/api/v1/capture/esp/oneshot?{query}" '
         f'-o /dev/null || echo "[WARN] esp loop capture failed"; '
         f'sleep {interval}; '
         f'done'
@@ -1936,7 +2013,7 @@ def api_esp_capture_loop_start():
 
         try:
             log_f = open(ESP_CAPTURE_LOOP_LOG, "a", buffering=1)
-            log_f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] start interval={interval} base={base}\n")
+            log_f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] start interval={interval} mode={esp_mode} target={esp_port}\n")
             ESP_CAPTURE_LOOP_PROC = subprocess.Popen(
                 ["bash", "-lc", loop_cmd],
                 cwd=os.path.dirname(__file__),
@@ -1946,12 +2023,16 @@ def api_esp_capture_loop_start():
             )
             ESP_CAPTURE_LOOP_STARTED_AT = int(time.time())
             ESP_CAPTURE_LOOP_INTERVAL = interval
-            ESP_CAPTURE_LOOP_BASE = base
+            ESP_CAPTURE_LOOP_BASE = None
+            ESP_CAPTURE_LOOP_MODE = esp_mode
+            ESP_CAPTURE_LOOP_PORT = esp_port
         except Exception as e:
             ESP_CAPTURE_LOOP_PROC = None
             ESP_CAPTURE_LOOP_STARTED_AT = None
             ESP_CAPTURE_LOOP_INTERVAL = None
             ESP_CAPTURE_LOOP_BASE = None
+            ESP_CAPTURE_LOOP_MODE = None
+            ESP_CAPTURE_LOOP_PORT = None
             return jsonify({"status": "error", "message": f"failed to start esp capture loop: {e}"}), 500
 
         payload = _capture_esp_loop_status_payload()
@@ -1961,7 +2042,7 @@ def api_esp_capture_loop_start():
 
 @app.route("/api/v1/capture/esp/loop/stop", methods=["POST"])
 def api_esp_capture_loop_stop():
-    global ESP_CAPTURE_LOOP_PROC, ESP_CAPTURE_LOOP_STARTED_AT, ESP_CAPTURE_LOOP_INTERVAL, ESP_CAPTURE_LOOP_BASE
+    global ESP_CAPTURE_LOOP_PROC, ESP_CAPTURE_LOOP_STARTED_AT, ESP_CAPTURE_LOOP_INTERVAL, ESP_CAPTURE_LOOP_BASE, ESP_CAPTURE_LOOP_MODE, ESP_CAPTURE_LOOP_PORT
 
     with ESP_CAPTURE_LOOP_LOCK:
         if not _capture_esp_loop_is_running():
@@ -1969,6 +2050,8 @@ def api_esp_capture_loop_stop():
             ESP_CAPTURE_LOOP_STARTED_AT = None
             ESP_CAPTURE_LOOP_INTERVAL = None
             ESP_CAPTURE_LOOP_BASE = None
+            ESP_CAPTURE_LOOP_MODE = None
+            ESP_CAPTURE_LOOP_PORT = None
             return jsonify({"status": "success", "running": False, "message": "esp capture loop already stopped"})
 
         proc = ESP_CAPTURE_LOOP_PROC
@@ -1986,6 +2069,8 @@ def api_esp_capture_loop_stop():
         ESP_CAPTURE_LOOP_STARTED_AT = None
         ESP_CAPTURE_LOOP_INTERVAL = None
         ESP_CAPTURE_LOOP_BASE = None
+        ESP_CAPTURE_LOOP_MODE = None
+        ESP_CAPTURE_LOOP_PORT = None
 
     return jsonify({"status": "success", "running": False, "message": "esp capture loop stopped"})
 

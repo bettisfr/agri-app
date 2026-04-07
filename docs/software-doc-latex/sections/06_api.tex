@@ -11,7 +11,7 @@ All operational clients should target \texttt{/api/v1} endpoints first. Legacy a
 Path & Method & Purpose \\
 \midrule
 \texttt{/api/v1/health} & GET & Service liveness and API version marker \\
-\texttt{/api/v1/health/checklist} & GET & Live checklist (RPi, ESP, camera, GPS, BME, storage) \\
+\texttt{/api/v1/health/checklist} & GET & Live checklist (RPi, camera, GPS, BME, storage; ESP backend field kept available) \\
 \texttt{/api/v1/system/status} & GET & Hostname, storage info, runtime timestamp \\
 \texttt{/api/v1/system/server/restart} & POST & Restart \texttt{agriapp-server.service} (user mode) \\
 \texttt{/api/v1/system/reboot} & POST & Reboot Raspberry Pi (requires sudo policy) \\
@@ -51,7 +51,7 @@ Path & Method & Purpose \\
 \texttt{/gallery} & GET & Web gallery interface \\
 \texttt{/capture} & GET & Web capture/control page \\
 \texttt{/system} & GET & Web system/network page \\
-\texttt{/health} & GET & Web live checklist page (RPi/ESP/camera/GPS/BME/storage) \\
+\texttt{/health} & GET & Web live checklist page (RPi/camera/GPS/BME/storage) \\
 \texttt{/log} & GET & Web runtime log page \\
 \texttt{/label} & GET & Web labeler interface (query \texttt{image}) \\
 \bottomrule
@@ -59,6 +59,9 @@ Path & Method & Purpose \\
 
 \subsection{Compatibility (Legacy) Routes}
 Legacy aliases have been removed from the runtime surface after migration of active clients to \texttt{/api/v1}. New integrations must target canonical versioned endpoints only.
+
+\subsection{Current Web Exposure Policy}
+The web frontend currently runs in RPi-only control mode for field stability. This means ESP controls are intentionally hidden in web routes (\texttt{/capture}, \texttt{/system}, \texttt{/health}), while ESP APIs remain available in \texttt{/api/v1} for diagnostics and phased reintegration.
 
 \subsection{Endpoint Grouping by Device}
 \subsubsection{Raspberry Pi Edge Node}

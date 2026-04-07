@@ -9,28 +9,9 @@
         <div>
             <p class="gallery-kicker">Field Capture Console</p>
             <h1 class="section-title mb-0">Capture</h1>
-            <p class="gallery-subtitle mb-0">RPi/ESP single shot and auto capture controls.</p>
+            <p class="gallery-subtitle mb-0">RPi single shot and auto capture controls.</p>
         </div>
     </section>
-
-    <div class="card mb-3"><div class="card-body">
-        <h2 class="h5 mb-3">Source</h2>
-        <div class="d-flex flex-wrap gap-2 mb-3" id="sourceGroup">
-            <button type="button" class="btn btn-outline-success source-btn" data-source="rpi">RPi</button>
-            <button type="button" class="btn btn-outline-success source-btn" data-source="esp">ESP</button>
-            <button type="button" class="btn btn-outline-success source-btn" data-source="both">Both</button>
-        </div>
-        <div class="row g-2 align-items-end">
-            <div class="col-12 col-lg-8">
-                <label for="espBaseInput" class="form-label mb-1">ESP base URL</label>
-                <input id="espBaseInput" type="text" class="form-control" placeholder="http://192.168.4.239">
-            </div>
-            <div class="col-12 col-lg-4 d-grid">
-                <button type="button" class="btn btn-outline-secondary" id="saveEspBtn">Save ESP host</button>
-            </div>
-        </div>
-        <div class="small text-muted mt-2">Used for ESP shot and ESP auto loop.</div>
-    </div></div>
 
     <div class="card mb-3"><div class="card-body">
         <h2 class="h5 mb-3">Auto Interval</h2>
@@ -56,7 +37,6 @@
     <div class="card mb-3"><div class="card-body">
         <h2 class="h5 mb-3">Status</h2>
         <div class="mb-1"><strong>Auto RPi:</strong> <span id="rpiLoopStatus">n/a</span></div>
-        <div><strong>Auto ESP:</strong> <span id="espLoopStatus">n/a</span></div>
         <div class="mt-1"><strong>Effective interval:</strong> <span id="effectiveInterval">n/a</span></div>
         <div class="mt-2"><strong>Last action:</strong> <span id="captureMessage">Ready</span></div>
     </div></div>

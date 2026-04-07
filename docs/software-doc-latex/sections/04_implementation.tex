@@ -57,6 +57,7 @@ The gallery view is driven by server-side pagination and lightweight thumbnails.
 The labeler view is implemented as an interaction-focused editor for bounding boxes and class assignment. Persistence is dual-output by design: JSON preserves full UI state, while TXT keeps compatibility with YOLO pipelines.
 
 The \texttt{System} page and \texttt{Gallery} destructive flows now use custom confirmation modals instead of browser default popups, aligning interaction style with the rest of the UI and making high-impact operations (power actions, delete-all) more explicit.
+In the current field baseline, the web UI is intentionally exposed in RPi-only control mode: ESP controls and ESP status blocks are hidden from \texttt{/capture}, \texttt{/system}, and \texttt{/health} to keep operations simpler and less error-prone. ESP proxy endpoints are still present backend-side for optional diagnostics and controlled experiments.
 
 \subsection{Android App Implementation}
 The Android application is written in Kotlin with Jetpack Compose and Retrofit. The UI is state-driven through a central view-model that coordinates discovery, control actions, gallery pagination, and logs.

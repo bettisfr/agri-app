@@ -1,12 +1,9 @@
 (() => {
-    const ESP_KEY = "agriapp_capture_esp_base";
-    const espInput = document.getElementById("healthEspBase");
     const refreshBtn = document.getElementById("healthRefreshBtn");
     const updatedEl = document.getElementById("healthUpdated");
 
     const cells = {
         rpi: { status: document.getElementById("hc-rpi-status"), details: document.getElementById("hc-rpi-details") },
-        esp: { status: document.getElementById("hc-esp-status"), details: document.getElementById("hc-esp-details") },
         camera: { status: document.getElementById("hc-camera-status"), details: document.getElementById("hc-camera-details") },
         gps: { status: document.getElementById("hc-gps-status"), details: document.getElementById("hc-gps-details") },
         bme: { status: document.getElementById("hc-bme-status"), details: document.getElementById("hc-bme-details") },
@@ -49,11 +46,7 @@
         if (refreshBtn) refreshBtn.disabled = true;
         if (updatedEl) updatedEl.textContent = "refreshing...";
         try {
-            const esp = (espInput.value || "").trim();
-            if (esp) localStorage.setItem(ESP_KEY, esp);
-            const q = esp ? `?esp_base=${encodeURIComponent(esp)}` : "";
-            const sep = q ? "&" : "?";
-            const res = await fetch(`/api/v1/health/checklist${q}${sep}_ts=${Date.now()}`, { cache: "no-store" });
+            const res = await fetch(`/api/v1/health/checklist?_ts=${Date.now()}`, { cache: "no-store" });
             const data = await res.json();
             if (!res.ok || data.status !== "success") {
                 throw new Error(data.message || `HTTP ${res.status}`);
@@ -62,11 +55,6 @@
 
             setStatus(cells.rpi.status, c.rpi?.status);
             cells.rpi.details.textContent = c.rpi?.hostname || "-";
-
-            setStatus(cells.esp.status, c.esp?.status);
-            cells.esp.details.textContent = c.esp?.base
-                ? `${c.esp.base}${c.esp.latency_ms != null ? ` (${c.esp.latency_ms} ms)` : ""}`
-                : (c.esp?.message || "-");
 
             setStatus(cells.camera.status, c.camera?.status);
             cells.camera.details.textContent = c.camera?.message || "-";
@@ -98,8 +86,6 @@
     }
 
     function init() {
-        const savedEsp = localStorage.getItem(ESP_KEY) || "";
-        espInput.value = savedEsp;
         refreshBtn.addEventListener("click", fetchChecklist);
         timer = setInterval(fetchChecklist, 8000);
         fetchChecklist();

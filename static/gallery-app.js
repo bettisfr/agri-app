@@ -132,6 +132,11 @@ function formatModalMetadata(imageData) {
     const gps = formatLatLon(md);
     const env = formatEnvSensors(md);
     const parts = [];
+    const width = Number(imageData?.image_width);
+    const height = Number(imageData?.image_height);
+    if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+        parts.push(`Resolution: ${Math.trunc(width)}x${Math.trunc(height)}`);
+    }
     if (gps !== "GPS: n/a") parts.push(gps);
     if (env) parts.push(env);
     if (parts.length === 0) return "Metadata: n/a";
@@ -300,6 +305,8 @@ async function refreshSingleImageCard(filename) {
                 labels_count: data.labels_count,
                 is_labeled: data.is_labeled,
                 file_size_bytes: data.file_size_bytes,
+                image_width: data.image_width,
+                image_height: data.image_height,
                 metadata: data.metadata,
             });
             const stateItem = galleryState.pageImages.find((img) => img.filename === data.filename);
@@ -307,6 +314,8 @@ async function refreshSingleImageCard(filename) {
                 stateItem.labels_count = data.labels_count;
                 stateItem.is_labeled = data.is_labeled;
                 stateItem.file_size_bytes = data.file_size_bytes ?? stateItem.file_size_bytes;
+                stateItem.image_width = data.image_width ?? stateItem.image_width;
+                stateItem.image_height = data.image_height ?? stateItem.image_height;
                 stateItem.metadata = data.metadata ?? stateItem.metadata;
             }
             updateModalStatusTag();
@@ -502,7 +511,7 @@ function renderPagination() {
     if (!paginationControls) return;
 
     paginationControls.innerHTML = "";
-    if (totalItems === 0 || totalPages <= 1) return;
+    if (totalItems === 0) return;
 
     const prevBtn = document.createElement("button");
     prevBtn.className = "gallery-page-btn";

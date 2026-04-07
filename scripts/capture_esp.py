@@ -64,19 +64,53 @@ def save_bytes(path, data):
         f.write(data)
 
 
-def capture_from_serial(port, out, baud, timeout, no_reset):
+def postprocess_image(path, post_hflip=False, post_vflip=False):
+    if not post_hflip and not post_vflip:
+        return
+    try:
+        from PIL import Image, ImageOps
+    except Exception as exc:
+        print(f"Warning: post-flip requested but Pillow not available: {exc}", file=sys.stderr)
+        return
+
+    try:
+        with Image.open(path) as img:
+            if post_hflip:
+                img = ImageOps.mirror(img)
+            if post_vflip:
+                img = ImageOps.flip(img)
+            img.save(path, format="JPEG", quality=95)
+    except Exception as exc:
+        print(f"Warning: failed post-flip for {path}: {exc}", file=sys.stderr)
+
+
+def capture_from_serial(port, out, baud, timeout, no_reset, trigger_char, control_params, post_hflip, post_vflip):
     import serial
 
     ser = serial.Serial(port, baud, timeout=timeout)
     try:
+        # ESP32-CAM+CH340 adapters may map DTR/RTS to EN/IO0.
+        # Keep both low by default to avoid holding the MCU in reset/bootloader.
+        try:
+            ser.dtr = False
+            ser.rts = False
+        except Exception:
+            pass
+        time.sleep(0.1)
+
         if not no_reset:
             # Trigger board reset on open for typical ESP32 USB serial behavior.
             ser.dtr = False
+            ser.rts = False
             time.sleep(0.1)
             ser.reset_input_buffer()
             ser.dtr = True
+            time.sleep(0.1)
+            ser.dtr = False
 
         size = None
+        ready_seen = False
+        t0 = time.time()
         while True:
             line = ser.readline()
             if not line:
@@ -94,6 +128,44 @@ def capture_from_serial(port, out, baud, timeout, no_reset):
             if txt.startswith("CAM_INIT_FAIL") or txt.startswith("CAPTURE_FAIL"):
                 return 2
 
+            # New serial firmware: wait for ready banner before sending controls.
+            if txt.startswith("SERIAL_CAM_READY"):
+                ready_seen = True
+                for item in control_params:
+                    if "=" not in item:
+                        print(f"Invalid --set value '{item}', expected var=val", file=sys.stderr)
+                        return 8
+                    var_name, var_val = item.split("=", 1)
+                    var_name = var_name.strip().lower()
+                    var_val = var_val.strip()
+                    if not var_name:
+                        print(f"Invalid --set value '{item}', empty var name", file=sys.stderr)
+                        return 8
+                    try:
+                        cmd = f"set {var_name}={var_val}\n".encode("ascii", errors="ignore")
+                        ser.write(cmd)
+                        ser.flush()
+                        time.sleep(0.12)
+                    except Exception as exc:
+                        print(f"Warning: failed to send serial set {var_name}: {exc}", file=sys.stderr)
+
+                if trigger_char:
+                    try:
+                        ser.write(trigger_char.encode("ascii", errors="ignore"))
+                        ser.flush()
+                    except Exception:
+                        pass
+
+            # Backward compatibility: if the board never emits SERIAL_CAM_READY,
+            # trigger once after a short grace period.
+            if (not ready_seen) and trigger_char and (time.time() - t0) > 1.2:
+                try:
+                    ser.write(trigger_char.encode("ascii", errors="ignore"))
+                    ser.flush()
+                    trigger_char = ""
+                except Exception:
+                    pass
+
         data = ser.read(size)
         if len(data) != size:
             print(f"Incomplete read: expected {size}, got {len(data)}", file=sys.stderr)
@@ -101,6 +173,7 @@ def capture_from_serial(port, out, baud, timeout, no_reset):
 
         out_path = next_available_name(out)
         save_bytes(out_path, data)
+        postprocess_image(out_path, post_hflip=post_hflip, post_vflip=post_vflip)
         print(f"Saved {len(data)} bytes to {out_path}")
         return 0
     finally:
@@ -143,7 +216,7 @@ def set_control_http(capture_url, var_name, var_val, timeout):
     print(f"Set {var_name}={var_val} via {control_url}")
 
 
-def capture_from_http(url, out, timeout, count, interval, framesize, control_params):
+def capture_from_http(url, out, timeout, count, interval, framesize, control_params, post_hflip, post_vflip):
     for item in control_params:
         if "=" not in item:
             print(f"Invalid --set value '{item}', expected var=val", file=sys.stderr)
@@ -176,6 +249,7 @@ def capture_from_http(url, out, timeout, count, interval, framesize, control_par
 
         out_path = next_available_name(indexed_name(out, idx))
         save_bytes(out_path, data)
+        postprocess_image(out_path, post_hflip=post_hflip, post_vflip=post_vflip)
         print(f"Saved {len(data)} bytes to {out_path}")
 
         if idx < count:
@@ -194,6 +268,11 @@ def main():
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--no-reset", action="store_true", help="Do not toggle DTR on open")
+    parser.add_argument(
+        "--trigger-char",
+        default="c",
+        help="Optional one-byte serial trigger sent before waiting for BEGIN (default: c, empty to disable)",
+    )
 
     parser.add_argument("--url", help="HTTP snapshot URL, e.g. http://192.168.1.38/capture")
     parser.add_argument("--count", type=int, default=1, help="Number of photos to save (HTTP mode)")
@@ -204,8 +283,10 @@ def main():
         action="append",
         default=[],
         metavar="VAR=VAL",
-        help="Set camera control before capture (repeatable), e.g. --set quality=12",
+        help="Set camera control before capture (repeatable), e.g. --set quality=12 or --set hmirror=0",
     )
+    parser.add_argument("--post-hflip", action="store_true", help="Force horizontal flip in software after capture")
+    parser.add_argument("--post-vflip", action="store_true", help="Force vertical flip in software after capture")
 
     args = parser.parse_args()
 
@@ -234,13 +315,25 @@ def main():
             args.interval,
             args.framesize,
             args.set,
+            args.post_hflip,
+            args.post_vflip,
         )
 
     if not args.port:
         print("Serial mode requires PORT, or pass --url for HTTP mode", file=sys.stderr)
         return 6
 
-    return capture_from_serial(args.port, args.out, args.baud, args.timeout, args.no_reset)
+    return capture_from_serial(
+        args.port,
+        args.out,
+        args.baud,
+        args.timeout,
+        args.no_reset,
+        args.trigger_char,
+        args.set,
+        args.post_hflip,
+        args.post_vflip,
+    )
 
 
 if __name__ == "__main__":
