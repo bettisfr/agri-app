@@ -1,0 +1,119 @@
+\section{Appendix: Command-Only Runbook}
+
+\subsection{Local Studio: Service and Basic Checks}
+\begin{lstlisting}[language=bash]
+cd ~/Desktop/github/agri-app
+./deploy_rpi.sh --reload-local-server
+curl -s http://127.0.0.1:5000/api/v1/health
+\end{lstlisting}
+
+\subsection{RPi: Sync and Backend Reload}
+\begin{lstlisting}[language=bash]
+cd ~/Desktop/github/agri-app
+./deploy_rpi.sh --sync
+./deploy_rpi.sh --reload-server
+\end{lstlisting}
+
+\subsection{RPi: Service Management}
+\begin{lstlisting}[language=bash]
+systemctl --user status agriapp-server.service
+systemctl --user restart agriapp-server.service
+journalctl --user -u agriapp-server.service -f
+\end{lstlisting}
+
+\subsection{RPi: One-shot Capture API}
+\begin{lstlisting}[language=bash]
+curl -X POST http://127.0.0.1:5000/api/v1/capture/rpi/oneshot
+\end{lstlisting}
+
+\subsection{RPi: Loop Capture API}
+\begin{lstlisting}[language=bash]
+curl http://127.0.0.1:5000/api/v1/capture/loop/status
+curl -X POST http://127.0.0.1:5000/api/v1/capture/loop/start \
+  -H "Content-Type: application/json" \
+  -d '{"interval_seconds":300}'
+curl -X POST http://127.0.0.1:5000/api/v1/capture/loop/stop
+\end{lstlisting}
+
+\subsection{RPi: Sensor Diagnostics}
+\begin{lstlisting}[language=bash]
+# Stop server first to avoid serial contention
+systemctl --user stop agriapp-server.service
+
+cd ~/agri-app
+python3 test/test-gps.py --port /dev/serial0 --baud 9600 --watch --raw
+python3 test/test-bme.py
+
+# Restart server
+systemctl --user start agriapp-server.service
+\end{lstlisting}
+
+\subsection{Studio: SegGPT One-shot CLI}
+\begin{lstlisting}[language=bash]
+/home/fra/pyvenv/bin/python3 tools/seggpt_infer.py \
+  --image static/uploads/images/rpi_20260408-152834.jpg \
+  --mask-out /tmp/local_seggpt_mask.png \
+  --backend seggpt \
+  --device cpu \
+  --prompt-mask static/uploads/masks/_last_prompt.png
+\end{lstlisting}
+
+\subsection{RPi: SegGPT One-shot CLI}
+\begin{lstlisting}[language=bash]
+source ~/pyenv/bin/activate
+python ~/agri-app/tools/seggpt_infer.py \
+  --image /home/fra/agri-app/static/uploads/images/rpi_20260408-152834.jpg \
+  --mask-out /tmp/rpi_seggpt_mask.png \
+  --backend seggpt \
+  --device cpu \
+  --prompt-mask /home/fra/agri-app/static/uploads/masks/_last_prompt.png
+\end{lstlisting}
+
+\subsection{Studio vs RPi Comparative Benchmark}
+\begin{lstlisting}[language=bash]
+cd ~/Desktop/github/agri-app
+python3 scripts/seggpt_compare_benchmark.py \
+  --images \
+  rpi_20260408-152834.jpg \
+  rpi_20260408-152754.jpg \
+  rpi_20260408-152714.jpg \
+  rpi_20260408-152634.jpg \
+  rpi_20260408-152554.jpg \
+  --download-remote-mask
+\end{lstlisting}
+
+\subsection{Benchmark Artifacts}
+\begin{lstlisting}[language=bash]
+# Example output folder
+ls -la benchmarks/seggpt_compare/run_YYYYMMDD-HHMMSS
+cat benchmarks/seggpt_compare/run_YYYYMMDD-HHMMSS/summary.csv
+\end{lstlisting}
+
+\subsection{Network Mode Control API}
+\begin{lstlisting}[language=bash]
+curl -s http://127.0.0.1:5000/api/v1/network/mode
+
+curl -X POST http://127.0.0.1:5000/api/v1/network/mode \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"ap_only"}'
+
+curl -X POST http://127.0.0.1:5000/api/v1/network/mode \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"wifi_only"}'
+\end{lstlisting}
+
+\subsection{Emergency Recovery Checklist (Commands Only)}
+\begin{lstlisting}[language=bash]
+# 1) Reachability
+ping -c 3 192.168.1.67
+
+# 2) Service
+ssh fra@192.168.1.67 'systemctl --user status agriapp-server.service'
+
+# 3) Reload if needed
+./deploy_rpi.sh --reload-server
+
+# 4) Health/API smoke
+ssh fra@192.168.1.67 'curl -s http://127.0.0.1:5000/api/v1/health'
+ssh fra@192.168.1.67 'curl -s http://127.0.0.1:5000/api/v1/system/status'
+\end{lstlisting}

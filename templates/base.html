@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AgriApp - {% block page_title %}Home{% endblock %}</title>
+    <title>{% if ui_mode == 'studio' %}AgriApp Studio{% else %}AgriApp RPi{% endif %} - {% block page_title %}Home{% endblock %}</title>
+    {% if ui_mode == 'studio' %}
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon-studio.svg') }}">
+    {% else %}
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
+    {% endif %}
     <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='site-ui.css') }}?v=20260408-studio-red" rel="stylesheet">
+    <link href="{{ url_for('static', filename='site-ui.css') }}?v=20260408-studio-red-seg" rel="stylesheet">
     {% block extra_head %}{% endblock %}
 </head>
 <body class="{% block body_class %}gallery-page{% endblock %}{% if ui_mode == 'studio' %} ui-mode-studio{% endif %}{% if ui_mode == 'rpi' %} ui-mode-rpi{% endif %}">

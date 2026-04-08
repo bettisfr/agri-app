@@ -25,6 +25,24 @@ Web validation focuses on end-user workflows rather than isolated UI rendering. 
 Performance-oriented validation includes thumbnail behavior: list/grid views should fetch lightweight thumbnail streams while full-resolution binaries are loaded only in detail workflows.
 
 Particular attention is given to state synchronization after mutations. After save or delete operations, the UI should reflect backend truth and avoid stale local assumptions. This behavior is verified through repeated interaction cycles rather than one-time checks.
+In current Studio workflow, an explicit \texttt{Clear all labels} action is part of validation because segmentation campaigns may generate tens of boxes per image; this operation must clear in-memory labels deterministically and persist only after explicit save.
+
+\subsection{SegGPT Cross-Node Comparative Validation}
+For paper-oriented reproducibility, SegGPT is validated with a dedicated cross-node benchmark script (\texttt{scripts/seggpt\_compare\_benchmark.py}). The benchmark executes the same model path on:
+\begin{itemize}
+  \item Studio node (local run),
+  \item Raspberry Pi node (remote run via SSH).
+\end{itemize}
+
+For each test image, the benchmark records:
+\begin{itemize}
+  \item local and remote elapsed time,
+  \item box-level equivalence,
+  \item optional mask hash equivalence (when remote masks are downloaded),
+  \item per-node raw JSON payloads.
+\end{itemize}
+
+Artifacts are exported under a timestamped run folder with a summary CSV and detailed JSON traces. This provides a stable evidence trail for comparative sections in the manuscript while keeping runtime UI concerns separated from evaluation workflows.
 
 \subsection{Android Client Validation}
 Tablet validation combines API integration, discovery behavior, and interaction safety. The app must:
@@ -56,6 +74,16 @@ The project follows an iterative ``change-verify-sync'' cycle. After meaningful 
 \end{enumerate}
 
 This strategy is intentionally pragmatic. It provides rapid feedback while keeping regression risk low in a system where backend, web frontend, and mobile client evolve together.
+
+\subsection{Reproducibility Artifacts for Publication}
+Comparative experiments are exported as filesystem artifacts, not only terminal logs. The benchmark workflow stores:
+\begin{itemize}
+  \item \texttt{summary.csv} (one row per image with local/remote times and match flags),
+  \item \texttt{json/local\_<stem>.json} and \texttt{json/remote\_<stem>.json},
+  \item local masks and optional downloaded remote masks for hash-level checks.
+\end{itemize}
+
+This packaging enables downstream auditability: a reviewer can re-open one run folder and verify timings, statuses, and semantic equivalence without replaying the whole session.
 
 \subsection{Acceptance Criteria}
 A deployment iteration is considered acceptable when the following conditions are simultaneously met:

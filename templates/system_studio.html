@@ -26,12 +26,27 @@
                 </div>
             </div>
             <div class="col-12 col-md-3 d-grid">
-                <button type="button" class="btn btn-success" id="importDatasetBtn">Import ZIP</button>
+                <button type="button" class="btn btn-studio-primary" id="importDatasetBtn">Import ZIP</button>
             </div>
         </div>
         <div class="mt-2"><strong>Import report:</strong></div>
         <pre id="importReport" class="mb-0 mt-1 p-2 bg-light border rounded" style="max-height: 260px; overflow: auto;">No import executed yet.</pre>
         <div class="mt-2"><strong>Status:</strong> <span id="systemMessage">Ready</span></div>
+    </div></div>
+
+    <div class="card mb-3"><div class="card-body">
+        <h2 class="h5 mb-3">Segmentation Last Mask</h2>
+        <div class="row g-2 align-items-center">
+            <div class="col-12 col-md-8">
+                <div><strong>Status:</strong> <span id="lastMaskStatus">N/A</span></div>
+                <div><strong>Updated:</strong> <span id="lastMaskUpdated">—</span></div>
+                <div><strong>Size:</strong> <span id="lastMaskSize">—</span></div>
+            </div>
+            <div class="col-12 col-md-4 d-grid gap-2">
+                <button type="button" class="btn btn-outline-secondary" id="refreshLastMaskBtn">Refresh</button>
+                <button type="button" class="btn btn-danger" id="deleteLastMaskBtn">Delete last mask</button>
+            </div>
+        </div>
     </div></div>
 </div>
 {% endblock %}

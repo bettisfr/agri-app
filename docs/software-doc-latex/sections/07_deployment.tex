@@ -81,3 +81,62 @@ A practical release cycle is:
 \end{enumerate}
 
 This sequence has proven robust in both office and field transitions.
+
+\subsection{Scenario Runbooks}
+To reduce ambiguity during field operation, deployment is documented as scenario-specific runbooks.
+
+\paragraph{Scenario A: Studio code update + RPi rollout}
+\begin{enumerate}
+  \item local smoke checks (\texttt{py\_compile}, critical scripts),
+  \item \texttt{./deploy\_rpi.sh --sync},
+  \item \texttt{./deploy\_rpi.sh --reload-server},
+  \item verify \texttt{/api/v1/health} and one-shot capture.
+\end{enumerate}
+
+\paragraph{Scenario B: RPi reboot after power cycle}
+\begin{enumerate}
+  \item verify user service status (\texttt{systemctl --user status agriapp-server.service}),
+  \item verify network reachability (expected Wi-Fi profile or AP fallback),
+  \item run one-shot capture and gallery check.
+\end{enumerate}
+
+\paragraph{Scenario C: Sensor troubleshooting}
+\begin{enumerate}
+  \item stop backend service to avoid serial contention,
+  \item run \texttt{test/test-gps.py} and \texttt{test/test-bme.py},
+  \item restart backend service,
+  \item validate metadata sidecar generation on a fresh shot.
+\end{enumerate}
+
+\paragraph{Scenario D: SegGPT comparative experiments}
+\begin{enumerate}
+  \item align ML stack versions (Studio and RPi),
+  \item verify same image set and prompt mask availability on both nodes,
+  \item run \texttt{scripts/seggpt\_compare\_benchmark.py},
+  \item archive \texttt{summary.csv} and JSON traces for paper artifacts.
+\end{enumerate}
+
+\subsection{Version-Parity Baseline for Reproducibility}
+For current comparative segmentation campaigns, the operational baseline requires aligned versions across Studio and RPi:
+\begin{itemize}
+  \item \texttt{torch 2.10.0},
+  \item \texttt{transformers 5.5.0},
+  \item \texttt{torchvision 0.25.0} (Studio where applicable).
+\end{itemize}
+
+Without parity, box/mask outputs can diverge even when using identical images and prompt masks, which invalidates strict reproducibility claims.
+
+\subsection{Unified Version Matrix (Current Baseline)}
+\begin{longtable}{p{0.26\linewidth} p{0.22\linewidth} p{0.22\linewidth} p{0.22\linewidth}}
+\toprule
+Component & Studio Node & RPi Node & Note \\
+\midrule
+Python runtime & \texttt{/home/fra/pyvenv} & \texttt{/home/fra/pyenv} & isolated venv per node \\
+Torch & \texttt{2.10.0} & \texttt{2.10.0} & parity required for SegGPT comparisons \\
+Transformers & \texttt{5.5.0} & \texttt{5.5.0} & parity required for mask/box equivalence \\
+Torchvision & \texttt{0.25.0} & optional / not required in baseline path & mismatch can break model imports on Studio \\
+SegGPT checkpoint & \texttt{BAAI/seggpt-vit-large} & \texttt{BAAI/seggpt-vit-large} & same checkpoint on both nodes \\
+Backend service & \texttt{agriapp-local.service} & \texttt{agriapp-server.service} & separate lifecycle and logs \\
+Android app package & \texttt{it.unipg.agriapp} & n/a & client package namespace \\
+\bottomrule
+\end{longtable}

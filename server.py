@@ -17,6 +17,9 @@ import ipaddress
 import struct
 import threading
 import re
+import sys
+import base64
+import tempfile
 
 from backend.bme_reader import get_bme280_reading
 from backend.gps_reader import get_gps_fix
@@ -41,6 +44,8 @@ LABELS_DIR = os.path.join(UPLOAD_ROOT, "labels")   # YOLO txt files
 JSONS_DIR = os.path.join(UPLOAD_ROOT, "jsons")     # per-image json files
 METADATA_DIR = os.path.join(UPLOAD_ROOT, "metadata")  # per-image metadata files
 THUMBS_DIR = os.path.join(UPLOAD_ROOT, "thumbs")  # cached thumbnails
+MASKS_DIR = os.path.join(UPLOAD_ROOT, "masks")  # segmentation masks
+LAST_PROMPT_MASK_PATH = os.path.join(MASKS_DIR, "_last_prompt.png")
 NETWORK_MODE_SCRIPT = os.path.join(os.path.dirname(__file__), "scripts", "rpi_network_mode.sh")
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
@@ -48,6 +53,7 @@ os.makedirs(LABELS_DIR, exist_ok=True)
 os.makedirs(JSONS_DIR, exist_ok=True)
 os.makedirs(METADATA_DIR, exist_ok=True)
 os.makedirs(THUMBS_DIR, exist_ok=True)
+os.makedirs(MASKS_DIR, exist_ok=True)
 
 CAPTURE_LOOP_PROC = None
 CAPTURE_LOOP_STARTED_AT = None
@@ -237,6 +243,49 @@ def save_labels_to_json_for_image(filename: str, labels_list):
     jpath = json_path_for_image(filename)
     with open(jpath, "w") as f:
         json.dump(labels_list, f, indent=2)
+
+
+def save_labels_for_image(filename: str, labels_list):
+    """
+    Save labels for an image to both:
+      - labels/<stem>.txt (only TP boxes)
+      - jsons/<stem>.json (full state)
+    """
+    txt_path = yolo_txt_path_for_image(filename)
+    yolo_lines = []
+    status_entry = []
+
+    for item in labels_list:
+        try:
+            cls = int(item["cls"])
+            xc = float(item["x_center"])
+            yc = float(item["y_center"])
+            w = float(item["width"])
+            h = float(item["height"])
+        except (KeyError, ValueError, TypeError):
+            continue
+
+        is_tp = bool(item.get("is_tp", True))
+        status_entry.append(
+            {
+                "cls": cls,
+                "x_center": xc,
+                "y_center": yc,
+                "width": w,
+                "height": h,
+                "is_tp": is_tp,
+            }
+        )
+        if is_tp:
+            yolo_lines.append(f"{cls} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
+
+    with open(txt_path, "w") as f:
+        if yolo_lines:
+            f.write("\n".join(yolo_lines) + "\n")
+        else:
+            f.write("")
+    save_labels_to_json_for_image(filename, status_entry)
+    return status_entry
 
 
 def labels_count_for_image(filename: str) -> int:
@@ -1247,53 +1296,26 @@ def save_labels():
     if not isinstance(labels, list):
         return jsonify({"status": "error", "message": "'labels' must be a list"}), 400
 
-    txt_path = yolo_txt_path_for_image(image_name)
-
-    yolo_lines = []
-    status_entry = []
-
+    normalized = []
     for l in labels:
-        try:
-            cls = int(l["cls"])
-            xc = float(l["x_center"])
-            yc = float(l["y_center"])
-            w = float(l["width"])
-            h = float(l["height"])
-        except (KeyError, ValueError, TypeError):
-            continue
-
         is_tp = l.get("is_tp")
         if is_tp is None:
             is_tp = True
-        is_tp = bool(is_tp)
-
-        status_entry.append(
+        normalized.append(
             {
-                "cls": cls,
-                "x_center": xc,
-                "y_center": yc,
-                "width": w,
-                "height": h,
-                "is_tp": is_tp,
+                "cls": l.get("cls"),
+                "x_center": l.get("x_center"),
+                "y_center": l.get("y_center"),
+                "width": l.get("width"),
+                "height": l.get("height"),
+                "is_tp": bool(is_tp),
             }
         )
 
-        if is_tp:
-            yolo_lines.append(f"{cls} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
-
     try:
-        with open(txt_path, "w") as f:
-            if yolo_lines:
-                f.write("\n".join(yolo_lines) + "\n")
-            else:
-                f.write("")
+        status_entry = save_labels_for_image(image_name, normalized)
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Failed to write label txt: {e}"}), 500
-
-    try:
-        save_labels_to_json_for_image(image_name, status_entry)
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Failed to write JSON: {e}"}), 500
+        return jsonify({"status": "error", "message": f"Failed to save labels: {e}"}), 500
 
     kept = sum(1 for s in status_entry if s.get("is_tp", True))
     total = len(status_entry)
@@ -2592,6 +2614,266 @@ def download_image_only():
         download_name=filename,
         mimetype="image/jpeg",
     )
+
+
+@app.route("/api/v1/studio/segment/oneshot", methods=["POST"])
+def api_studio_segment_oneshot():
+    """
+    Experimental Studio segmentation endpoint.
+    Runs tools/seggpt_infer.py and stores:
+      - mask: static/uploads/masks/<stem>.png
+      - labels: jsons/<stem>.json + labels/<stem>.txt
+    """
+    if LABELER_READONLY:
+        return jsonify({"status": "error", "message": "read-only mode: segmentation disabled"}), 403
+
+    data = request.get_json(silent=True) or {}
+    image_name = normalize_image_filename(data.get("image", ""))
+    if not image_name:
+        return jsonify({"status": "error", "message": "Missing 'image' field"}), 400
+
+    image_path = os.path.join(IMAGES_DIR, image_name)
+    if not os.path.exists(image_path):
+        return jsonify({"status": "error", "message": f"Image not found: {image_name}"}), 404
+
+    seg_backend = str(data.get("backend", "auto")).strip().lower()
+    if seg_backend not in ("auto", "seggpt", "threshold"):
+        return jsonify({"status": "error", "message": "Invalid backend (use auto|seggpt|threshold)"}), 400
+
+    seg_checkpoint = str(data.get("checkpoint", "")).strip()
+    seg_device = str(data.get("device", "auto")).strip().lower()
+    if seg_device not in ("auto", "cuda", "cpu"):
+        return jsonify({"status": "error", "message": "Invalid device (use auto|cuda|cpu)"}), 400
+    allow_download = bool(data.get("allow_download", False))
+    prompt_mask_png = data.get("prompt_mask_png")
+
+    stem, _ = os.path.splitext(image_name)
+    mask_path = os.path.join(MASKS_DIR, f"{stem}.png")
+
+    infer_script = os.path.join(os.path.dirname(__file__), "tools", "seggpt_infer.py")
+    if not os.path.exists(infer_script):
+        return jsonify({"status": "error", "message": "Missing tools/seggpt_infer.py"}), 500
+
+    configured_python = (os.environ.get("SEGGPT_PYTHON") or "").strip()
+    if configured_python:
+        python_exec = configured_python
+    else:
+        default_venv_python = os.path.expanduser("~/pyvenv/bin/python3")
+        python_exec = default_venv_python if os.path.exists(default_venv_python) else sys.executable
+
+    command = [
+        python_exec,
+        infer_script,
+        "--image",
+        image_path,
+        "--mask-out",
+        mask_path,
+        "--backend",
+        seg_backend,
+        "--device",
+        seg_device,
+    ]
+    if allow_download:
+        command.append("--allow-download")
+    if seg_checkpoint:
+        command.extend(["--checkpoint", seg_checkpoint])
+
+    tmp_prompt_path = None
+    if isinstance(prompt_mask_png, str) and prompt_mask_png.strip():
+        raw = prompt_mask_png.strip()
+        if raw.startswith("data:image"):
+            marker = "base64,"
+            idx = raw.find(marker)
+            if idx >= 0:
+                raw = raw[idx + len(marker):]
+        try:
+            decoded = base64.b64decode(raw, validate=False)
+            with tempfile.NamedTemporaryFile(prefix="agriapp_prompt_", suffix=".png", delete=False) as tf:
+                tf.write(decoded)
+                tmp_prompt_path = tf.name
+            command.extend(["--prompt-mask", tmp_prompt_path])
+        except Exception:
+            tmp_prompt_path = None
+
+    timeout_seconds = 300 if allow_download else 70
+
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=os.path.dirname(__file__),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        if tmp_prompt_path and os.path.exists(tmp_prompt_path):
+            try:
+                os.remove(tmp_prompt_path)
+            except Exception:
+                pass
+        return jsonify({"status": "error", "message": f"Segmentation timeout after {timeout_seconds}s"}), 504
+    except Exception as e:
+        if tmp_prompt_path and os.path.exists(tmp_prompt_path):
+            try:
+                os.remove(tmp_prompt_path)
+            except Exception:
+                pass
+        return jsonify({"status": "error", "message": f"Segmentation failed to start: {e}"}), 500
+    finally:
+        if tmp_prompt_path and os.path.exists(tmp_prompt_path):
+            try:
+                os.remove(tmp_prompt_path)
+            except Exception:
+                pass
+
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+    if proc.returncode != 0:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Segmentation command failed",
+                "returncode": proc.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "command": " ".join(command),
+            }
+        ), 500
+
+    parsed = None
+    for line in reversed(stdout.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line)
+            break
+        except Exception:
+            continue
+
+    if not isinstance(parsed, dict) or parsed.get("status") != "success":
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Segmentation output parse failed",
+                "stdout": stdout,
+                "stderr": stderr,
+                "command": " ".join(command),
+            }
+        ), 500
+
+    boxes = parsed.get("boxes") or []
+    if not isinstance(boxes, list):
+        boxes = []
+
+    cleaned_boxes = []
+    for b in boxes:
+        try:
+            xc = float(b.get("x_center"))
+            yc = float(b.get("y_center"))
+            w = float(b.get("width"))
+            h = float(b.get("height"))
+            cls = int(b.get("cls", 0))
+        except Exception:
+            continue
+        if w <= 0 or h <= 0:
+            continue
+        if not (0 <= xc <= 1 and 0 <= yc <= 1 and 0 < w <= 1 and 0 < h <= 1):
+            continue
+        cleaned_boxes.append(
+            {
+                "cls": cls,
+                "x_center": xc,
+                "y_center": yc,
+                "width": w,
+                "height": h,
+                "is_tp": True,
+            }
+        )
+
+    try:
+        saved_labels = save_labels_for_image(image_name, cleaned_boxes)
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to save segmentation labels: {e}"}), 500
+
+    mask_rel = None
+    if os.path.exists(mask_path):
+        mask_rel = f"/static/uploads/masks/{stem}.png"
+
+    _append_runtime_event(
+        "STUDIO",
+        f"segment oneshot image={image_name} backend={parsed.get('backend', 'unknown')} boxes={len(saved_labels)}",
+    )
+
+    return jsonify(
+        {
+            "status": "success",
+            "image": image_name,
+            "backend": parsed.get("backend", "unknown"),
+            "fallback_reason": parsed.get("fallback_reason"),
+            "device": parsed.get("device"),
+            "checkpoint": parsed.get("checkpoint"),
+            "labels_saved": len(saved_labels),
+            "mask_url": mask_rel,
+            "message": f"Segmentation completed ({len(saved_labels)} boxes).",
+        }
+    ), 200
+
+
+@app.route("/api/v1/studio/prompt-mask/last", methods=["GET", "POST", "DELETE"])
+def api_studio_prompt_mask_last():
+    meta_only = str(request.args.get("meta_only", "0")).strip().lower() in ("1", "true", "yes", "on")
+    if request.method == "GET":
+        if not os.path.exists(LAST_PROMPT_MASK_PATH):
+            return jsonify({"status": "error", "message": "No last mask"}), 404
+        try:
+            stat = os.stat(LAST_PROMPT_MASK_PATH)
+            payload = {
+                "status": "success",
+                "present": True,
+                "bytes": stat.st_size,
+                "updated_ts": int(stat.st_mtime),
+                "updated_at": datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            if not meta_only:
+                with open(LAST_PROMPT_MASK_PATH, "rb") as f:
+                    raw = f.read()
+                    encoded = base64.b64encode(raw).decode("ascii")
+                payload["prompt_mask_png"] = f"data:image/png;base64,{encoded}"
+            return jsonify(payload)
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to read last mask: {e}"}), 500
+
+    if LABELER_READONLY:
+        return jsonify({"status": "error", "message": "read-only mode: prompt mask update disabled"}), 403
+
+    if request.method == "DELETE":
+        try:
+            if os.path.exists(LAST_PROMPT_MASK_PATH):
+                os.remove(LAST_PROMPT_MASK_PATH)
+            return jsonify({"status": "success", "message": "Last mask deleted"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to delete last mask: {e}"}), 500
+
+    data = request.get_json(silent=True) or {}
+    prompt_mask_png = data.get("prompt_mask_png")
+    if not isinstance(prompt_mask_png, str) or not prompt_mask_png.strip():
+        return jsonify({"status": "error", "message": "Missing prompt_mask_png"}), 400
+
+    raw = prompt_mask_png.strip()
+    if raw.startswith("data:image"):
+        marker = "base64,"
+        idx = raw.find(marker)
+        if idx >= 0:
+            raw = raw[idx + len(marker):]
+    try:
+        decoded = base64.b64decode(raw, validate=False)
+        with open(LAST_PROMPT_MASK_PATH, "wb") as f:
+            f.write(decoded)
+        return jsonify({"status": "success", "message": "Last mask updated"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to save last mask: {e}"}), 400
 
 
 @app.route("/api/v1/studio/import", methods=["POST"])

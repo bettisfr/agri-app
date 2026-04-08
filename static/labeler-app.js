@@ -24,6 +24,7 @@ const CLASS_CONFIG = {
 const CLASS_DEFS = CLASS_CONFIG[APP_CONTEXT] || CLASS_CONFIG.cimici;
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const READ_ONLY = (QUERY_PARAMS.get("readonly") || "").toLowerCase() === "1";
+const IS_STUDIO_LABEL = window.location.pathname.startsWith("/studio/");
 
 const CLASS_MAP = CLASS_DEFS.reduce((acc, c) => {
     acc[c.id] = c.label;
@@ -54,6 +55,17 @@ const zoomState = {
     isPanning: false,
     startX: 0,
     startY: 0,
+};
+
+const promptState = {
+    enabled: false,
+    brushSize: 28,
+    isPainting: false,
+    cursor: null,
+    maskCanvas: null,
+    maskCtx: null,
+    maskDirty: false,
+    lastAvailable: false,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -389,6 +401,14 @@ const drawing = {
         canvasEl.height = h;
         canvasEl.style.width = `${w}px`;
         canvasEl.style.height = `${h}px`;
+
+        const promptCanvas = byId("promptCanvas");
+        if (promptCanvas) {
+            promptCanvas.width = w;
+            promptCanvas.height = h;
+            promptCanvas.style.width = `${w}px`;
+            promptCanvas.style.height = `${h}px`;
+        }
     },
 
     hexToRGBA(hex, alpha) {
@@ -592,6 +612,7 @@ const drawing = {
         let startBox = null;
 
         canvas.addEventListener("mousedown", (event) => {
+            if (promptState.enabled) return;
             const point = posFromEvent(event);
             const width = canvas.width;
             const height = canvas.height;
@@ -655,6 +676,7 @@ const drawing = {
         });
 
         canvas.addEventListener("mousemove", (event) => {
+            if (promptState.enabled) return;
             const point = posFromEvent(event);
             const width = canvas.width;
             const height = canvas.height;
@@ -708,6 +730,7 @@ const drawing = {
         });
 
         const endDrag = () => {
+            if (promptState.enabled) return;
             if (dragMode === "drawing" && drawPreview && drawPreview.w >= 2 && drawPreview.h >= 2) {
                 const width = canvas.width;
                 const height = canvas.height;
@@ -742,6 +765,325 @@ const drawing = {
 
         canvas.addEventListener("mouseup", endDrag);
         canvas.addEventListener("mouseleave", endDrag);
+    },
+};
+
+const segmentation = {
+    ensureMaskCanvas(width, height) {
+        if (
+            promptState.maskCanvas
+            && promptState.maskCtx
+            && promptState.maskCanvas.width === width
+            && promptState.maskCanvas.height === height
+        ) {
+            return;
+        }
+        promptState.maskCanvas = document.createElement("canvas");
+        promptState.maskCanvas.width = width;
+        promptState.maskCanvas.height = height;
+        promptState.maskCtx = promptState.maskCanvas.getContext("2d");
+        promptState.maskCtx.clearRect(0, 0, width, height);
+    },
+
+    canvasPosFromEvent(event, canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const sx = canvas.width / rect.width;
+        const sy = canvas.height / rect.height;
+        return {
+            x: (event.clientX - rect.left) * sx,
+            y: (event.clientY - rect.top) * sy,
+        };
+    },
+
+    drawBrushOnMask(point) {
+        if (!promptState.maskCtx || !promptState.maskCanvas) return;
+        promptState.maskCtx.save();
+        promptState.maskCtx.fillStyle = "rgba(255,255,255,1)";
+        promptState.maskCtx.beginPath();
+        promptState.maskCtx.arc(point.x, point.y, promptState.brushSize / 2, 0, Math.PI * 2);
+        promptState.maskCtx.fill();
+        promptState.maskCtx.restore();
+        promptState.maskDirty = true;
+    },
+
+    renderOverlay() {
+        const promptCanvas = byId("promptCanvas");
+        if (!promptCanvas || !promptState.maskCanvas) return;
+        const ctx = promptCanvas.getContext("2d");
+        ctx.clearRect(0, 0, promptCanvas.width, promptCanvas.height);
+
+        // Draw mask tinted in red.
+        ctx.drawImage(promptState.maskCanvas, 0, 0);
+        ctx.globalCompositeOperation = "source-in";
+        ctx.fillStyle = "rgba(214, 53, 53, 0.36)";
+        ctx.fillRect(0, 0, promptCanvas.width, promptCanvas.height);
+        ctx.globalCompositeOperation = "source-over";
+
+        // Brush preview ring.
+        if (promptState.enabled && promptState.cursor) {
+            ctx.save();
+            ctx.strokeStyle = "rgba(214, 53, 53, 0.95)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(promptState.cursor.x, promptState.cursor.y, promptState.brushSize / 2, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+    },
+
+    setEnabled(enabled) {
+        promptState.enabled = !!enabled;
+        const promptCanvas = byId("promptCanvas");
+        const bboxCanvas = byId("bboxCanvas");
+        if (promptCanvas) {
+            promptCanvas.style.pointerEvents = promptState.enabled ? "auto" : "none";
+            promptCanvas.style.cursor = promptState.enabled ? "none" : "default";
+        }
+        if (bboxCanvas) {
+            bboxCanvas.style.pointerEvents = promptState.enabled ? "none" : "auto";
+        }
+        this.renderOverlay();
+    },
+
+    clearMask() {
+        if (promptState.maskCtx && promptState.maskCanvas) {
+            promptState.maskCtx.clearRect(0, 0, promptState.maskCanvas.width, promptState.maskCanvas.height);
+            promptState.maskDirty = false;
+            this.renderOverlay();
+        }
+    },
+
+    promptMaskDataUrl() {
+        if (!promptState.maskCanvas) return null;
+        return promptState.maskCanvas.toDataURL("image/png");
+    },
+
+    hasPaintedMask() {
+        return !!promptState.maskDirty;
+    },
+
+    renderLastMaskState() {
+        const node = byId("segmentLastMaskState");
+        if (!node) return;
+        node.textContent = promptState.lastAvailable ? "Last mask: available" : "Last mask: none";
+        node.style.color = promptState.lastAvailable ? "#1e6d34" : "#4f6273";
+    },
+
+    async refreshLastMaskAvailability() {
+        try {
+            const res = await fetch("/api/v1/studio/prompt-mask/last");
+            promptState.lastAvailable = res.ok;
+        } catch (err) {
+            promptState.lastAvailable = false;
+        }
+        this.renderLastMaskState();
+    },
+
+    async saveCurrentAsLastMask() {
+        const dataUrl = this.promptMaskDataUrl();
+        if (!dataUrl) return;
+        try {
+            await fetch("/api/v1/studio/prompt-mask/last", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt_mask_png: dataUrl }),
+            });
+            promptState.lastAvailable = true;
+            this.renderLastMaskState();
+        } catch (err) {
+            // Non-blocking.
+        }
+    },
+
+    async fetchLastMaskDataUrl() {
+        const res = await fetch("/api/v1/studio/prompt-mask/last");
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data || data.status !== "success" || !data.prompt_mask_png) return null;
+        promptState.lastAvailable = true;
+        this.renderLastMaskState();
+        return data.prompt_mask_png;
+    },
+
+    async loadLastMaskIntoCanvas() {
+        if (!promptState.maskCanvas || !promptState.maskCtx) return false;
+        const dataUrl = await this.fetchLastMaskDataUrl();
+        if (!dataUrl) {
+            promptState.lastAvailable = false;
+            this.renderLastMaskState();
+            uiList.setStatus("No last mask available.", "error");
+            return false;
+        }
+        const img = new Image();
+        const loaded = await new Promise((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
+            img.src = dataUrl;
+        });
+        if (!loaded) {
+            uiList.setStatus("Failed to load last mask.", "error");
+            return false;
+        }
+        promptState.maskCtx.clearRect(0, 0, promptState.maskCanvas.width, promptState.maskCanvas.height);
+        promptState.maskCtx.drawImage(img, 0, 0, promptState.maskCanvas.width, promptState.maskCanvas.height);
+        promptState.maskDirty = true;
+        this.renderOverlay();
+        uiList.setStatus("Last mask loaded.", "success");
+        return true;
+    },
+
+    async deleteLastMask() {
+        try {
+            await fetch("/api/v1/studio/prompt-mask/last", { method: "DELETE" });
+        } catch (err) {
+            // ignore
+        }
+        promptState.lastAvailable = false;
+        this.renderLastMaskState();
+    },
+
+    async runOnCurrentImage() {
+        if (READ_ONLY || !IS_STUDIO_LABEL) return;
+        if (!currentImage || !currentImage.name) {
+            uiList.setStatus("No image loaded for segmentation.", "error");
+            return;
+        }
+
+        const runBtn = byId("segmentRunBtn");
+        const prevText = runBtn ? runBtn.textContent : "Segment";
+        if (runBtn) {
+            runBtn.disabled = true;
+            runBtn.textContent = "Segmenting...";
+        }
+
+        try {
+            let promptMaskPng = null;
+            if (this.hasPaintedMask()) {
+                promptMaskPng = this.promptMaskDataUrl();
+                await this.saveCurrentAsLastMask();
+            } else {
+                promptMaskPng = await this.fetchLastMaskDataUrl();
+            }
+            if (!promptMaskPng) {
+                throw new Error("No mask available. Draw one or use last mask.");
+            }
+
+            const payload = {
+                image: currentImage.name,
+                backend: "auto",
+                prompt_mask_png: promptMaskPng,
+            };
+            const res = await fetch("/api/v1/studio/segment/oneshot", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok || data.status !== "success") {
+                throw new Error(data.message || `HTTP ${res.status}`);
+            }
+
+            await api.loadServerImage(currentImage.name);
+            uiList.setStatus(
+                `Segmentation done (${data.labels_saved ?? 0} boxes, ${data.backend || "unknown"}).`,
+                "success",
+            );
+        } catch (err) {
+            uiList.setStatus(`Segmentation failed: ${err && err.message ? err.message : err}`, "error");
+        } finally {
+            if (runBtn) {
+                runBtn.disabled = false;
+                runBtn.textContent = prevText;
+            }
+        }
+    },
+
+    initPanel() {
+        const panel = byId("segmentPanel");
+        if (!panel) return;
+        if (READ_ONLY || !IS_STUDIO_LABEL) {
+            panel.style.display = "none";
+            return;
+        }
+
+        const enable = byId("segmentPaintEnable");
+        const slider = byId("segmentBrushSize");
+        const value = byId("segmentBrushSizeValue");
+        const clearBtn = byId("segmentClearBtn");
+        const runBtn = byId("segmentRunBtn");
+        const useLastBtn = byId("segmentUseLastBtn");
+        const deleteLastBtn = byId("segmentDeleteLastBtn");
+
+        if (slider) {
+            promptState.brushSize = parseInt(slider.value, 10) || 28;
+            if (value) value.textContent = `${promptState.brushSize} px`;
+            slider.addEventListener("input", () => {
+                promptState.brushSize = parseInt(slider.value, 10) || 28;
+                if (value) value.textContent = `${promptState.brushSize} px`;
+                this.renderOverlay();
+            });
+        }
+
+        if (enable) {
+            enable.addEventListener("change", () => this.setEnabled(enable.checked));
+        }
+        if (clearBtn) {
+            clearBtn.addEventListener("click", () => this.clearMask());
+        }
+        if (runBtn) {
+            runBtn.addEventListener("click", () => this.runOnCurrentImage());
+        }
+        if (useLastBtn) {
+            useLastBtn.addEventListener("click", () => this.loadLastMaskIntoCanvas());
+        }
+        if (deleteLastBtn) {
+            deleteLastBtn.addEventListener("click", async () => {
+                await this.deleteLastMask();
+                uiList.setStatus("Last mask deleted.");
+            });
+        }
+        this.refreshLastMaskAvailability();
+    },
+
+    initCanvasInteraction() {
+        const promptCanvas = byId("promptCanvas");
+        if (!promptCanvas) return;
+
+        const onPointerDown = (event) => {
+            if (!promptState.enabled) return;
+            if (event.button !== 0) return;
+            event.preventDefault();
+            const point = this.canvasPosFromEvent(event, promptCanvas);
+            promptState.isPainting = true;
+            promptState.cursor = point;
+            this.drawBrushOnMask(point);
+            this.renderOverlay();
+        };
+
+        const onPointerMove = (event) => {
+            if (!promptState.enabled) return;
+            const point = this.canvasPosFromEvent(event, promptCanvas);
+            promptState.cursor = point;
+            if (promptState.isPainting) {
+                this.drawBrushOnMask(point);
+            }
+            this.renderOverlay();
+        };
+
+        const onPointerUp = () => {
+            promptState.isPainting = false;
+        };
+
+        const onPointerLeave = () => {
+            promptState.cursor = null;
+            promptState.isPainting = false;
+            this.renderOverlay();
+        };
+
+        promptCanvas.addEventListener("mousedown", onPointerDown);
+        promptCanvas.addEventListener("mousemove", onPointerMove);
+        promptCanvas.addEventListener("mouseup", onPointerUp);
+        promptCanvas.addEventListener("mouseleave", onPointerLeave);
     },
 };
 
@@ -837,8 +1179,13 @@ const api = {
 
         img.onload = () => {
             drawing.fitCanvasToImage(img, canvas);
+            segmentation.ensureMaskCanvas(img.naturalWidth, img.naturalHeight);
+            segmentation.clearMask();
+            segmentation.setEnabled(false);
+            segmentation.refreshLastMaskAvailability();
             zoom.resetToFit();
             drawing.drawBBoxes(img, canvas, labels);
+            segmentation.renderOverlay();
         };
 
         img.onerror = () => {
@@ -892,8 +1239,42 @@ const api = {
 
 // -------------------- INIT --------------------
 document.addEventListener("DOMContentLoaded", () => {
+    const confirmClearAllDialog = (message, title = "Confirm Action") => new Promise((resolve) => {
+        const overlay = byId("labelerConfirmOverlay");
+        const titleEl = byId("labelerConfirmTitle");
+        const messageEl = byId("labelerConfirmMessage");
+        const cancelBtn = byId("labelerConfirmCancel");
+        const okBtn = byId("labelerConfirmOk");
+        if (!overlay || !titleEl || !messageEl || !cancelBtn || !okBtn) {
+            resolve(window.confirm(message));
+            return;
+        }
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        overlay.classList.add("open");
+        okBtn.focus();
+
+        const cleanup = (confirmed) => {
+            overlay.classList.remove("open");
+            cancelBtn.removeEventListener("click", onCancel);
+            okBtn.removeEventListener("click", onConfirm);
+            overlay.removeEventListener("click", onBackdrop);
+            resolve(confirmed);
+        };
+        const onCancel = () => cleanup(false);
+        const onConfirm = () => cleanup(true);
+        const onBackdrop = (e) => {
+            if (e.target === overlay) cleanup(false);
+        };
+        cancelBtn.addEventListener("click", onCancel);
+        okBtn.addEventListener("click", onConfirm);
+        overlay.addEventListener("click", onBackdrop);
+    });
+
     drawing.initInteraction();
     zoom.init();
+    segmentation.initPanel();
+    segmentation.initCanvasInteraction();
 
     uiList.setStatus("Waiting for image parameter (?image=...).");
 
@@ -921,6 +1302,33 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? `/api/v1/images/download?image=${encodeURIComponent(currentImage.name)}`
                 : `/api/v1/images/download-with-labels?image=${encodeURIComponent(currentImage.name)}`;
             window.location.href = url;
+        });
+    }
+
+    const clearAllBtn = byId("clearAllLabelsBtn");
+    if (clearAllBtn) {
+        if (READ_ONLY) {
+            clearAllBtn.style.display = "none";
+        }
+        clearAllBtn.addEventListener("click", async () => {
+            if (READ_ONLY) return;
+            if (!currentImage || !currentImage.name) {
+                uiList.setStatus("No image loaded.", "error");
+                return;
+            }
+            if (!labels.length) {
+                uiList.setStatus("No labels to clear.");
+                return;
+            }
+            const confirmed = await confirmClearAllDialog(
+                "Clear all labels for this image?",
+                "Clear Labels",
+            );
+            if (!confirmed) return;
+
+            labels = [];
+            selectedId = null;
+            uiList.refresh("All labels cleared (not saved yet).");
         });
     }
 

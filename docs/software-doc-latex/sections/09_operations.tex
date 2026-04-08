@@ -16,6 +16,7 @@ A typical operating cycle includes:
 \end{enumerate}
 
 This workflow is available via shell, browser, and Android app, which reduces dependency on any single interaction channel.
+Annotation policy is intentionally split: RPi web surface remains operational/read-only, while annotation and segmentation curation are performed on Studio.
 
 \subsection{Service Operations}
 The backend server is managed by \texttt{systemctl --user}. In routine maintenance, the most relevant operations are status inspection, restart, and log tailing. API-level restart/reboot/poweroff actions provide remote control equivalents for field usage when shell access is inconvenient.
@@ -79,6 +80,22 @@ A practical incident playbook is:
 
 This order minimizes downtime and preserves diagnostic signal.
 
+\subsection{Troubleshooting Matrix (Symptom $\rightarrow$ Diagnosis $\rightarrow$ Commands)}
+\begin{longtable}{p{0.27\linewidth} p{0.29\linewidth} p{0.38\linewidth}}
+\toprule
+Symptom & Typical Diagnosis & Primary Commands \\
+\midrule
+API unreachable & service down or wrong subnet & \texttt{systemctl --user status agriapp-server.service}, \texttt{curl /api/v1/health} \\
+Capture returns error & camera pipeline issue or busy device & \texttt{POST /api/v1/capture/rpi/oneshot}, check service journal \\
+GPS always N/A & no sky fix, UART contention, or wiring issue & stop service; \texttt{python3 test/test-gps.py --watch --raw} \\
+BME values missing & I2C not enabled/wiring/address issue & \texttt{sudo i2cdetect -y 1}, \texttt{python3 test/test-bme.py} \\
+AP/Wi-Fi switch unstable & profile priority or mode transition issue & \texttt{/api/v1/network/mode}, \texttt{nmcli connection show} \\
+Studio SegGPT mismatch vs RPi & ML version drift or different checkpoint & run benchmark script; compare \texttt{summary.csv}; verify version matrix \\
+Bulk bad labels after segmentation & aggressive prompt/segment run & use \texttt{Clear all labels}, then save clean state \\
+Disk running out & no export/cleanup cadence & \texttt{/api/v1/system/status}, export dataset, delete old images \\
+\bottomrule
+\end{longtable}
+
 \subsection{Operational Logging}
 Effective troubleshooting depends on correlated logs. The project uses a combination of backend logs, systemd status/logs, and Android in-app logs. Operators should record at least three contextual tags when reporting incidents: active network mode, active host/IP, and last successful action.
 Recent app iterations keep in-app logging structured but concise (discovery milestones, network switch milestones, loop lifecycle changes, and shot outcomes). Detailed contextual values are expected to be inspected from metadata artifacts and gallery views rather than verbose control-log lines.
@@ -86,3 +103,5 @@ On the web side, runtime logging is exposed through a single unified stream focu
 
 \subsection{Maintenance Outlook}
 Maintenance effort should continue reducing legacy complexity. The most valuable ongoing work is progressive legacy endpoint retirement, tighter contract tests on \texttt{/api/v1}, and continued UI/ops simplification so that field operation stays predictable even as features grow.
+
+For experimental segmentation studies, operational maintenance should also preserve version parity between Studio and RPi ML stacks (notably \texttt{torch}, \texttt{transformers}, and \texttt{torchvision}), because mismatched versions can produce non-identical masks/boxes and invalidate comparative runs.

@@ -42,6 +42,25 @@
                 <option value="6">6</option>
             </select>
         </div>
+        {% if ui_mode == 'studio' %}
+        <div class="col-12 d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+            <div id="labeledCounter" class="small text-muted">0 / 0 labeled (shown 0)</div>
+            <div class="d-inline-flex align-items-center gap-3">
+                <label class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="radio" name="labeledFilter" value="all" checked>
+                    <span class="form-check-label">All</span>
+                </label>
+                <label class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="radio" name="labeledFilter" value="non_labeled">
+                    <span class="form-check-label">To label</span>
+                </label>
+                <label class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="radio" name="labeledFilter" value="labeled">
+                    <span class="form-check-label">Labeled</span>
+                </label>
+            </div>
+        </div>
+        {% endif %}
     </section>
 
     <div
@@ -91,5 +110,5 @@
 
 {% block page_scripts %}
 <script src="{{ url_for('static', filename='vendor/socketio/socket.io.min.js') }}"></script>
-<script src="{{ url_for('static', filename='gallery-app.js') }}?v=20260408-export-visible-fix"></script>
+<script src="{{ url_for('static', filename='gallery-app.js') }}?v=20260408-seg-studio"></script>
 {% endblock %}

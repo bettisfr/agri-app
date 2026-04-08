@@ -34,6 +34,41 @@ agri-app/
 `-- README.md
 \end{verbatim}
 
+\subsection{Data Model and Filesystem Invariants}
+The runtime data model is intentionally file-oriented and must preserve strict naming coherence across sibling folders. For a given image stem (for example \texttt{rpi\_20260408-152834}), expected artifacts are:
+\begin{itemize}
+  \item \texttt{images/<stem>.jpg} (or compatible image extension),
+  \item \texttt{metadata/<stem>.json} (sensor/context sidecar),
+  \item optional \texttt{jsons/<stem>.json} (annotation JSON),
+  \item optional \texttt{labels/<stem>.txt} (YOLO export),
+  \item optional \texttt{masks/<stem>.png} (SegGPT/segmentation result mask),
+  \item optional \texttt{thumbs/<stem>.jpg} (cache artifact).
+\end{itemize}
+
+Two invariants are operationally important:
+\begin{enumerate}
+  \item delete operations are lifecycle-complete: deleting one image must remove related sidecars/caches to avoid orphan artifacts;
+  \item metadata persistence is best-effort but deterministic in key set: missing sensors produce \texttt{null} values, not schema drift.
+\end{enumerate}
+
+For segmentation-assisted Studio workflows, \texttt{masks/\_last\_prompt.png} is a reusable global prompt artifact. It is not image-specific and can be overwritten or removed without affecting captured binaries.
+
+\subsection{File Lifecycle Matrix (Create/Update/Delete)}
+\begin{longtable}{p{0.26\linewidth} p{0.22\linewidth} p{0.44\linewidth}}
+\toprule
+Operation & Target & Effects on Artifacts \\
+\midrule
+RPi one-shot capture & \texttt{images/<stem>.jpg} & Creates image; creates/updates \texttt{metadata/<stem>.json}; no labels by default. \\
+ESP one-shot capture (proxy) & \texttt{images/esp\_<stem>.jpg} & Creates image; metadata sidecar best-effort; normalization can backfill missing sidecar. \\
+Label save & \texttt{jsons/<stem>.json}, \texttt{labels/<stem>.txt} & Rewrites both JSON and YOLO TXT from current in-memory label set. \\
+SegGPT oneshot (Studio) & \texttt{masks/<stem>.png}, label files & Writes segmentation mask and updates annotation files through same label save path. \\
+Last mask update & \texttt{masks/\_last\_prompt.png} & Overwrites reusable prompt-mask artifact. \\
+Delete single image & stem-linked files & Removes image and associated \texttt{jsons/labels/metadata/thumbs/masks} artifacts for the same stem. \\
+Delete all images & upload subtree data & Clears all capture-related artifacts in managed upload folders. \\
+Dataset import (Studio) & \texttt{images/labels/jsons/metadata} & Adds files; optional overwrite policy for collisions. \\
+\bottomrule
+\end{longtable}
+
 \subsection{Backend Implementation}
 The backend is implemented in Python/Flask and runs on Raspberry Pi as the authoritative runtime node. The implementation is API-centric: business logic for capture, gallery lifecycle, annotations, network mode switching, and system operations is concentrated server-side, while clients (web/tablet) remain thin.
 
@@ -81,6 +116,25 @@ Persistence is filesystem-based and explicit:
 \end{itemize}
 
 The implementation enforces lifecycle consistency: delete endpoints remove associated label/json/metadata artifacts and thumbnail cache entries. Capture naming also encodes source semantics (e.g., \texttt{rpi\_...} and \texttt{esp\_...}) to simplify mixed-source campaigns.
+
+\subsection{Operational Script Inventory}
+The following scripts are currently considered operationally relevant for reproducible deployments and evaluations:
+\begin{longtable}{p{0.28\linewidth} p{0.67\linewidth}}
+\toprule
+Script & Role \\
+\midrule
+\texttt{deploy\_rpi.sh} & Unified operator entrypoint: sync, mount, remote commands, server reload, ESP build/flash, Android build/install/run. \\
+\texttt{scripts/run\_server.sh} & Backend launcher with environment bootstrapping (\texttt{.env.systemd}, pyenv/venv). \\
+\texttt{scripts/capture\_rpi.sh} & Raspberry Pi capture wrapper (oneshot and interval loop modes). \\
+\texttt{scripts/capture\_esp.py} & ESP helper (HTTP and serial capture modes). \\
+\texttt{scripts/rpi\_network\_mode.sh} & NetworkManager integration for Wi-Fi/AP mode switching. \\
+\texttt{scripts/seggpt\_compare\_benchmark.py} & Cross-node SegGPT benchmark (Studio vs RPi), CSV/JSON artifact export. \\
+\texttt{scripts/install\_systemd\_user\_services.sh} & RPi user-service installation and enablement. \\
+\texttt{scripts/install\_local\_user\_service.sh} & Studio local service installation (\texttt{agriapp-local.service}). \\
+\texttt{test/test-gps.py} & UART-level GPS diagnostic utility. \\
+\texttt{test/test-bme.py} & I2C-level BME280 diagnostic utility. \\
+\bottomrule
+\end{longtable}
 
 \subsection{Implementation Trade-offs}
 The software intentionally favors operational clarity over abstraction depth. A single backend process on Raspberry Pi simplifies deployment and observability, at the cost of centralizing responsibility on the edge node. Filesystem persistence eases backup and manual inspection, at the cost of weaker ad-hoc indexing compared to database-backed designs. These trade-offs are acceptable for the current project phase, where field robustness and rapid iteration are the primary objectives.

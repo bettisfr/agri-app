@@ -28,6 +28,15 @@ This folder contains operational helpers for capture, network mode, and service 
   - Captures one ESP image and one RPi image, then saves both in one local folder.
   - Useful for camera quality comparison campaigns.
 
+- `seggpt_compare_benchmark.py`
+  - Runs SegGPT on the same image set both on Studio (local) and on RPi (remote over SSH).
+  - Exports benchmark artifacts in a timestamped folder:
+    - `summary.csv` with timing and match flags
+    - `json/` with raw per-image payloads (local + remote)
+    - optional downloaded remote masks for exact mask hash comparison
+  - Example:
+    - `python3 scripts/seggpt_compare_benchmark.py --images rpi_20260408-152834.jpg rpi_20260408-152754.jpg --download-remote-mask`
+
 - `run_server.sh`
   - Wrapper to launch `server.py` with the configured Python environment.
 

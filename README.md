@@ -57,6 +57,10 @@ Both UIs use the same backend and the same `/api/v1` contract surface.
     - ESP build/flash
     - Android build/install/run
 
+- `scripts/seggpt_compare_benchmark.py`
+  - SegGPT benchmark runner (Studio vs RPi) on the same image set and prompt mask.
+  - Exports CSV + per-image JSON artifacts for paper-ready comparisons.
+
 ## 3. Quick Start
 
 Install dependencies:
@@ -200,7 +204,17 @@ Export names include timestamp:
 - Optional `Overwrite`
 - Read JSON report (imported/skipped/errors)
 
-## 8. Metadata (GPS + BME280)
+## 8. Studio Labeler Operations
+
+On `/studio/label?image=<filename>`:
+
+- `Clear all labels` clears all current boxes in one action (with confirm dialog).
+- `Save labels` persists the current state.
+- Segmentation supports reusable `Last mask`:
+  - if you paint a new mask and run segment, it overwrites last mask.
+  - if no new painting is present, segment uses the stored last mask.
+
+## 9. Metadata (GPS + BME280)
 
 Per-image sidecar metadata is stored in:
 - `static/uploads/metadata/<stem>.json`
@@ -214,7 +228,7 @@ Best-effort policy:
 - capture does not fail when one sensor is unavailable.
 - values are persisted when available.
 
-## 9. GPS Notes
+## 10. GPS Notes
 
 GPS serial access is lock-protected in backend. For manual serial diagnostics, stop the server first:
 
@@ -225,15 +239,43 @@ python3 test/test-gps.py --port /dev/serial0 --baud 9600 --watch --raw
 systemctl --user start agriapp-server.service
 ```
 
-## 10. Data Folders
+## 11. SegGPT Comparative Benchmark (Studio vs RPi)
+
+Run comparative tests from Studio without exposing segmentation controls on RPi UI:
+
+```bash
+python3 scripts/seggpt_compare_benchmark.py \
+  --images \
+  rpi_20260408-152834.jpg \
+  rpi_20260408-152754.jpg \
+  rpi_20260408-152714.jpg \
+  rpi_20260408-152634.jpg \
+  rpi_20260408-152554.jpg \
+  --download-remote-mask
+```
+
+Output folder:
+
+- `benchmarks/seggpt_compare/run_YYYYMMDD-HHMMSS/summary.csv`
+- `.../json/` (raw payloads local+remote)
+- `.../local_masks/`
+- `.../remote_masks/` (when `--download-remote-mask` is set)
+
+Notes:
+
+- Comparisons assume same image basenames exist on both Studio and RPi paths.
+- For deterministic parity, keep aligned ML versions across nodes (torch/transformers/torchvision).
+
+## 12. Data Folders
 
 - Images: `static/uploads/images`
 - Labels TXT: `static/uploads/labels`
 - Labels JSON: `static/uploads/jsons`
 - Metadata: `static/uploads/metadata`
 - Thumbnails cache: `static/uploads/thumbs`
+- Segmentation masks: `static/uploads/masks`
 
-## 11. Environment File (`.env.systemd`)
+## 13. Environment File (`.env.systemd`)
 
 Path:
 
@@ -252,7 +294,7 @@ APP_ICON=🌿
 # APP_ROLE=rpi
 ```
 
-## 12. Notes
+## 14. Notes
 
 - Bootstrap and Socket.IO assets are vendored locally (`static/vendor`) for offline/AP robustness.
 - ESP APIs remain available; daily field baseline currently prioritizes RPi capture path.

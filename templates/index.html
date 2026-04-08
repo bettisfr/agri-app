@@ -8,7 +8,7 @@
     <div class="row justify-content-center">
         <div class="col-lg-6">
             <img src="static/img/home-camera.png" id="logo-index" alt="Raspberry Pi Camera" class="img-fluid mb-4">
-            <h1 class="section-title">AgriApp</h1>
+            <h1 class="section-title">{% if ui_mode == 'studio' %}AgriApp Studio{% else %}AgriApp RPi{% endif %}</h1>
             <h2 class="text-muted mb-4">"Revolutionizing Smart Agriculture, One Insect at a Time"</h2>
             <p class="lead">
                 AgriApp is a cutting-edge solution designed to monitor and analyze insect populations in agricultural fields.

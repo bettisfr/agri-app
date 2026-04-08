@@ -67,6 +67,8 @@ Path & Method & Purpose \\
 \texttt{/api/v1/download/dataset-selected} & GET/POST & Visible/selected export ZIP \\
 \texttt{/api/v1/images/download-with-labels} & GET & Single image bundle export ZIP \\
 \texttt{/api/v1/images/download} & GET & Single image download attachment \\
+\texttt{/api/v1/studio/segment/oneshot} & POST & Studio segmentation oneshot (SegGPT helper path) \\
+\texttt{/api/v1/studio/prompt-mask/last} & GET/POST/DELETE & Read/update/delete reusable ``last mask'' \\
 \texttt{/api/v1/studio/import} & POST & Studio dataset import ZIP \\
 \bottomrule
 \end{longtable}
@@ -100,3 +102,74 @@ HTTP codes follow standard semantics:
 \end{itemize}
 
 Error payloads include concise diagnostic context to support field troubleshooting without immediate shell access.
+
+\subsection{Representative Request/Response Examples}
+\paragraph{Health}
+\begin{lstlisting}[language=bash]
+curl -s http://127.0.0.1:5000/api/v1/health
+\end{lstlisting}
+\begin{lstlisting}
+{"service":"agriapp","status":"ok","version":"v1"}
+\end{lstlisting}
+
+\paragraph{Paginated images}
+\begin{lstlisting}[language=bash]
+curl -s "http://127.0.0.1:5000/api/v1/images?page=1&page_size=5"
+\end{lstlisting}
+\begin{lstlisting}
+{
+  "status":"success",
+  "items":[{"filename":"rpi_....jpg","is_labeled":false,"metadata":{...}}],
+  "page":1,"page_size":5,"total_items":7,"total_pages":2
+}
+\end{lstlisting}
+
+\paragraph{RPi one-shot}
+\begin{lstlisting}[language=bash]
+curl -s -X POST http://127.0.0.1:5000/api/v1/capture/rpi/oneshot
+\end{lstlisting}
+\begin{lstlisting}
+{"status":"success","latest_filename":"rpi_YYYYMMDD-HHMMSS.jpg"}
+\end{lstlisting}
+
+\paragraph{Studio SegGPT oneshot}
+\begin{lstlisting}[language=bash]
+curl -s -X POST http://127.0.0.1:5000/api/v1/studio/segment/oneshot \
+  -H "Content-Type: application/json" \
+  -d '{"image":"rpi_....jpg","backend":"seggpt","device":"cpu",
+       "prompt_mask_png":"data:image/png;base64,..."}'
+\end{lstlisting}
+\begin{lstlisting}
+{"status":"success","backend":"seggpt","labels_saved":5,
+ "mask_url":"/static/uploads/masks/rpi_....png"}
+\end{lstlisting}
+
+\paragraph{Network mode switch}
+\begin{lstlisting}[language=bash]
+curl -s -X POST http://127.0.0.1:5000/api/v1/network/mode \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"ap_only"}'
+\end{lstlisting}
+\begin{lstlisting}
+{"status":"success","mode":"ap_only","message":"network mode applied"}
+\end{lstlisting}
+
+\subsection{UI-to-API Mapping (Critical Actions)}
+\begin{longtable}{p{0.27\linewidth} p{0.30\linewidth} p{0.38\linewidth}}
+\toprule
+UI Context & User Action & API Calls \\
+\midrule
+RPi Capture page & Shot & \texttt{POST /api/v1/capture/rpi/oneshot} \\
+RPi Capture page & Start auto & \texttt{POST /api/v1/capture/loop/start} \\
+RPi Capture page & Stop auto & \texttt{POST /api/v1/capture/loop/stop} \\
+RPi Gallery & Delete image & \texttt{POST /api/v1/images/delete} \\
+RPi Gallery & Delete all & \texttt{POST /api/v1/images/delete-all} \\
+RPi Gallery & Export all/visible & \texttt{GET /api/v1/download/dataset}, \texttt{GET/POST /api/v1/download/dataset-selected} \\
+Studio Labeler & Save labels & \texttt{POST /api/v1/labels} \\
+Studio Labeler & Clear all labels & local in-memory state clear, then \texttt{POST /api/v1/labels} on save \\
+Studio Labeler & Segment with brush & \texttt{POST /api/v1/studio/segment/oneshot} \\
+Studio Labeler & Use/Delete last mask & \texttt{GET/DELETE /api/v1/studio/prompt-mask/last} \\
+Studio System & Import ZIP & \texttt{POST /api/v1/studio/import} \\
+RPi System & Reboot/Poweroff & \texttt{POST /api/v1/system/reboot}, \texttt{POST /api/v1/system/poweroff} \\
+\bottomrule
+\end{longtable}

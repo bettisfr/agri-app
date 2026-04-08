@@ -6,7 +6,7 @@
     <title>AgriApp - Labeler</title>
 
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='labeler-ui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='labeler-ui.css') }}?v=20260408-seg-brush">
 </head>
 <body>
     <!-- Viewer -->
@@ -14,6 +14,7 @@
         <div id="imageArea" class="stage">
             <img id="previewImage" alt="No image loaded">
             <canvas id="bboxCanvas"></canvas>
+            <canvas id="promptCanvas"></canvas>
         </div>
     </div>
 
@@ -56,7 +57,36 @@
                 <div id="labelsList"></div>
             </section>
 
+            <section id="segmentPanel" class="sidebar-card">
+                <div class="labels-header">
+                    <strong>Segmentation</strong>
+                </div>
+                <div class="segment-row">
+                    <label class="segment-check">
+                        <input type="checkbox" id="segmentPaintEnable">
+                        <span>Enable brush</span>
+                    </label>
+                </div>
+                <div class="segment-row">
+                    <label for="segmentBrushSize" class="segment-label">Brush size</label>
+                    <input type="range" id="segmentBrushSize" min="6" max="120" step="1" value="28">
+                    <span id="segmentBrushSizeValue" class="segment-size-value">28 px</span>
+                </div>
+                <div class="segment-actions">
+                    <button id="segmentClearBtn" class="option-button option-button-secondary">Clear mask</button>
+                    <button id="segmentRunBtn" class="option-button">Segment</button>
+                </div>
+                <div class="segment-last-row">
+                    <span id="segmentLastMaskState" class="segment-last-state">Last mask: none</span>
+                </div>
+                <div class="segment-actions">
+                    <button id="segmentUseLastBtn" class="option-button option-button-secondary">Use last mask</button>
+                    <button id="segmentDeleteLastBtn" class="option-button option-button-secondary">Delete last mask</button>
+                </div>
+            </section>
+
             <div class="sidebar-actions">
+                <button id="clearAllLabelsBtn" class="option-button option-button-danger">Clear all labels</button>
                 <button id="saveTxtBtn" class="option-button">Save labels</button>
                 <button id="downloadCurrentBtn" class="option-button option-button-secondary">Export image + labels</button>
             </div>
@@ -64,7 +94,18 @@
         </div>
     </aside>
 
+    <div id="labelerConfirmOverlay" class="confirm-modal-overlay">
+        <div class="confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="labelerConfirmTitle">
+            <h3 id="labelerConfirmTitle" class="confirm-modal-title">Confirm Action</h3>
+            <p id="labelerConfirmMessage" class="confirm-modal-message"></p>
+            <div class="confirm-modal-actions">
+                <button id="labelerConfirmCancel" class="confirm-btn confirm-btn-secondary">Cancel</button>
+                <button id="labelerConfirmOk" class="confirm-btn confirm-btn-danger">OK</button>
+            </div>
+        </div>
+    </div>
+
     <!-- IMPORTANT: point to the labeler-specific JS, not the gallery one -->
-    <script src="{{ url_for('static', filename='labeler-app.js') }}"></script>
+    <script src="{{ url_for('static', filename='labeler-app.js') }}?v=20260408-seg-brush-clearall"></script>
 </body>
 </html>
