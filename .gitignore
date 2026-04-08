@@ -4,6 +4,7 @@ static/uploads/images
 static/uploads/thumbs
 static/uploads/labels
 static/uploads/jsons
+static/uploads/
 **/__pycache__/
 .codex*
 .env.systemd
