@@ -1,0 +1,2 @@
+image,local_status,remote_status,local_time_s,remote_time_s,local_backend,remote_backend,local_boxes_n,remote_boxes_n,boxes_same,local_mask_md5,remote_mask_md5,mask_same,local_error,remote_error
+rpi_20260408-152834.jpg,success,success,6.924,40.726,seggpt,seggpt,1,1,True,e8fdaf91c23bca4385cf6334093ec6da,e8fdaf91c23bca4385cf6334093ec6da,True,,

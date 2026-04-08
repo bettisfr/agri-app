@@ -1,0 +1,2 @@
+image,local_status,remote_status,local_time_s,remote_time_s,local_backend,remote_backend,local_boxes_n,remote_boxes_n,boxes_same,local_mask_md5,remote_mask_md5,mask_same,local_error,remote_error
+rpi_20260408-152834.jpg,success,rc=1,6.8,0.348,seggpt,,1,0,False,e8fdaf91c23bca4385cf6334093ec6da,,False,,bash: line 1: ~/pyenv/bin/activate: No such file or directory
