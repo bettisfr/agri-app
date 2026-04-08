@@ -5,6 +5,8 @@ static/uploads/thumbs
 static/uploads/labels
 static/uploads/jsons
 static/uploads/
+benchmarks/seggpt_compare/run_*/local_masks/
+benchmarks/seggpt_compare/run_*/remote_masks/
 **/__pycache__/
 .codex*
 .env.systemd
