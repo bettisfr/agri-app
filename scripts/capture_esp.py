@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import glob
 import os
 import re
 import sys
@@ -84,100 +85,173 @@ def postprocess_image(path, post_hflip=False, post_vflip=False):
         print(f"Warning: failed post-flip for {path}: {exc}", file=sys.stderr)
 
 
+def resolve_serial_port(preferred_port):
+    if preferred_port and os.path.exists(preferred_port):
+        return preferred_port
+
+    base = os.path.basename(preferred_port or "")
+    if base.startswith("ttyACM"):
+        candidates = sorted(glob.glob("/dev/ttyACM*"))
+    elif base.startswith("ttyUSB"):
+        candidates = sorted(glob.glob("/dev/ttyUSB*"))
+    else:
+        candidates = []
+
+    if candidates:
+        return candidates[0]
+    return preferred_port
+
+
+def open_serial_resilient(serial_mod, preferred_port, baud, timeout, deadline):
+    last_exc = None
+    while time.time() < deadline:
+        port = resolve_serial_port(preferred_port)
+        try:
+            # Open with DTR/RTS preconfigured low to avoid reset pulses
+            # on ESP32-S3 native USB CDC/JTAG ports.
+            ser = serial_mod.Serial()
+            ser.port = port
+            ser.baudrate = baud
+            ser.timeout = timeout
+            ser.xonxoff = False
+            ser.rtscts = False
+            ser.dsrdtr = False
+            try:
+                ser.dtr = False
+                ser.rts = False
+            except Exception:
+                pass
+            ser.open()
+            return ser, port
+        except Exception as exc:
+            last_exc = exc
+            print(f"[warn] serial open failed on {port}: {exc}", file=sys.stderr)
+            time.sleep(0.4)
+
+    raise RuntimeError(f"Unable to open serial port ({preferred_port}): {last_exc}")
+
+
 def capture_from_serial(port, out, baud, timeout, no_reset, trigger_char, control_params, post_hflip, post_vflip):
     import serial
 
-    ser = serial.Serial(port, baud, timeout=timeout)
-    try:
-        # ESP32-CAM+CH340 adapters may map DTR/RTS to EN/IO0.
-        # Keep both low by default to avoid holding the MCU in reset/bootloader.
+    max_attempts = 3
+    session_timeout = max(20.0, float(timeout))
+    open_deadline = time.time() + session_timeout
+
+    for attempt in range(1, max_attempts + 1):
+        ser = None
+        working_trigger_char = trigger_char
         try:
-            ser.dtr = False
-            ser.rts = False
-        except Exception:
-            pass
-        time.sleep(0.1)
+            ser, resolved_port = open_serial_resilient(serial, port, baud, timeout, open_deadline)
+            if attempt > 1:
+                print(f"[retry] serial capture attempt {attempt}/{max_attempts} on {resolved_port}", file=sys.stderr)
 
-        if not no_reset:
-            # Trigger board reset on open for typical ESP32 USB serial behavior.
-            ser.dtr = False
-            ser.rts = False
+            # ESP32-CAM+CH340 adapters may map DTR/RTS to EN/IO0.
+            # Keep both low by default to avoid holding the MCU in reset/bootloader.
+            try:
+                ser.dtr = False
+                ser.rts = False
+            except Exception:
+                pass
             time.sleep(0.1)
-            ser.reset_input_buffer()
-            ser.dtr = True
-            time.sleep(0.1)
-            ser.dtr = False
 
-        size = None
-        ready_seen = False
-        t0 = time.time()
-        while True:
-            line = ser.readline()
-            if not line:
-                print("Timeout waiting for header", file=sys.stderr)
-                return 1
+            if not no_reset:
+                # Trigger board reset on open for typical ESP32 USB serial behavior.
+                ser.dtr = False
+                ser.rts = False
+                time.sleep(0.1)
+                ser.reset_input_buffer()
+                ser.dtr = True
+                time.sleep(0.1)
+                ser.dtr = False
 
-            txt = line.decode(errors="ignore").strip()
-            print(txt)
+            size = None
+            ready_seen = False
+            t0 = time.time()
+            while True:
+                try:
+                    line = ser.readline()
+                except serial.SerialException as exc:
+                    print(f"[warn] serial glitch while waiting header: {exc}", file=sys.stderr)
+                    raise
 
-            m = re.match(r"^BEGIN\s+(\d+)$", txt)
-            if m:
-                size = int(m.group(1))
-                break
+                if not line:
+                    print("Timeout waiting for header", file=sys.stderr)
+                    return 1
 
-            if txt.startswith("CAM_INIT_FAIL") or txt.startswith("CAPTURE_FAIL"):
-                return 2
+                txt = line.decode(errors="ignore").strip()
+                print(txt)
 
-            # New serial firmware: wait for ready banner before sending controls.
-            if txt.startswith("SERIAL_CAM_READY"):
-                ready_seen = True
-                for item in control_params:
-                    if "=" not in item:
-                        print(f"Invalid --set value '{item}', expected var=val", file=sys.stderr)
-                        return 8
-                    var_name, var_val = item.split("=", 1)
-                    var_name = var_name.strip().lower()
-                    var_val = var_val.strip()
-                    if not var_name:
-                        print(f"Invalid --set value '{item}', empty var name", file=sys.stderr)
-                        return 8
+                m = re.match(r"^BEGIN\s+(\d+)$", txt)
+                if m:
+                    size = int(m.group(1))
+                    break
+
+                if txt.startswith("CAM_INIT_FAIL") or txt.startswith("CAPTURE_FAIL"):
+                    return 2
+
+                # New serial firmware: wait for ready banner before sending controls.
+                if txt.startswith("SERIAL_CAM_READY"):
+                    ready_seen = True
+                    for item in control_params:
+                        if "=" not in item:
+                            print(f"Invalid --set value '{item}', expected var=val", file=sys.stderr)
+                            return 8
+                        var_name, var_val = item.split("=", 1)
+                        var_name = var_name.strip().lower()
+                        var_val = var_val.strip()
+                        if not var_name:
+                            print(f"Invalid --set value '{item}', empty var name", file=sys.stderr)
+                            return 8
+                        try:
+                            cmd = f"set {var_name}={var_val}\n".encode("ascii", errors="ignore")
+                            ser.write(cmd)
+                            ser.flush()
+                            time.sleep(0.12)
+                        except Exception as exc:
+                            print(f"Warning: failed to send serial set {var_name}: {exc}", file=sys.stderr)
+
+                    if working_trigger_char:
+                        try:
+                            ser.write(working_trigger_char.encode("ascii", errors="ignore"))
+                            ser.flush()
+                        except Exception:
+                            pass
+
+                # Backward compatibility: if the board never emits SERIAL_CAM_READY,
+                # trigger once after a short grace period.
+                if (not ready_seen) and working_trigger_char and (time.time() - t0) > 1.2:
                     try:
-                        cmd = f"set {var_name}={var_val}\n".encode("ascii", errors="ignore")
-                        ser.write(cmd)
+                        ser.write(working_trigger_char.encode("ascii", errors="ignore"))
                         ser.flush()
-                        time.sleep(0.12)
-                    except Exception as exc:
-                        print(f"Warning: failed to send serial set {var_name}: {exc}", file=sys.stderr)
-
-                if trigger_char:
-                    try:
-                        ser.write(trigger_char.encode("ascii", errors="ignore"))
-                        ser.flush()
+                        working_trigger_char = ""
                     except Exception:
                         pass
 
-            # Backward compatibility: if the board never emits SERIAL_CAM_READY,
-            # trigger once after a short grace period.
-            if (not ready_seen) and trigger_char and (time.time() - t0) > 1.2:
-                try:
-                    ser.write(trigger_char.encode("ascii", errors="ignore"))
-                    ser.flush()
-                    trigger_char = ""
-                except Exception:
-                    pass
+            data = ser.read(size)
+            if len(data) != size:
+                print(f"Incomplete read: expected {size}, got {len(data)}", file=sys.stderr)
+                return 3
 
-        data = ser.read(size)
-        if len(data) != size:
-            print(f"Incomplete read: expected {size}, got {len(data)}", file=sys.stderr)
-            return 3
+            out_path = next_available_name(out)
+            save_bytes(out_path, data)
+            postprocess_image(out_path, post_hflip=post_hflip, post_vflip=post_vflip)
+            print(f"Saved {len(data)} bytes to {out_path}")
+            return 0
+        except serial.SerialException as exc:
+            if attempt >= max_attempts:
+                print(f"[error] serial capture failed after {max_attempts} attempts: {exc}", file=sys.stderr)
+                return 7
+            time.sleep(0.6)
+            continue
+        finally:
+            try:
+                if ser is not None:
+                    ser.close()
+            except Exception:
+                pass
 
-        out_path = next_available_name(out)
-        save_bytes(out_path, data)
-        postprocess_image(out_path, post_hflip=post_hflip, post_vflip=post_vflip)
-        print(f"Saved {len(data)} bytes to {out_path}")
-        return 0
-    finally:
-        ser.close()
+    return 7
 
 
 def capture_one_http(url, timeout):
