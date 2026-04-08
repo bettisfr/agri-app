@@ -1,35 +1,63 @@
 # AgriApp
 
-Edge app for Raspberry Pi camera capture + local web gallery/labeling.
+Edge-first platform for insect image acquisition, contextual metadata collection (GPS + BME280), gallery curation, and annotation workflows.
 
-## What Is In This Repo
+The project now runs with a **dual UI model**:
+
+- **RPi UI** (field operations): capture, network/system control, health, logs.
+- **Studio UI** (curation workstation): gallery + annotation + dataset import.
+
+Both UIs use the same backend and the same `/api/v1` contract surface.
+
+## 1. Main Runtime Paths
+
+### RPi (field node)
+- Home: `/rpi`
+- Gallery (read-only inspection): `/rpi/gallery`
+- Capture: `/rpi/capture`
+- System: `/rpi/system`
+- Health: `/rpi/health`
+- Log: `/rpi/log`
+- Label page (viewer mode): `/rpi/label?image=<filename>`
+
+### Studio (local curation)
+- Home: `/studio`
+- Gallery (labeling enabled): `/studio/gallery`
+- System (dataset import): `/studio/system`
+- Log: `/studio/log`
+- Label page (full labeling): `/studio/label?image=<filename>`
+
+### Legacy short paths (still valid, no redirect)
+- `/`, `/gallery`, `/capture`, `/system`, `/health`, `/log`, `/label`
+- They are served directly according to active runtime role.
+
+## 2. Core Components
 
 - `server.py`
-  - Runs the web server on port `5000`.
-  - Serves home/gallery/capture/system/log/health/labeler UI.
-  - Exposes APIs for image listing, label save/load, delete, and dataset download.
+  - Flask + Socket.IO backend on port `5000`
+  - UI routes (RPi/Studio)
+  - `/api/v1` endpoints for capture, image lifecycle, labels, download/export, health, system, logs
 
 - `client.py`
-  - Captures images from Raspberry Pi camera (`rpicam-still` / `libcamera-still`).
-  - Supports single shot (`--oneshot`) or periodic capture (`--interval`).
-  - Includes autofocus and image tuning options.
-
-- `scripts/run_server.sh`
-  - Starts `server.py` loading Python env (pyenv or venv fallback).
+  - Compatibility shim; capture logic lives in backend modules/scripts.
 
 - `scripts/capture_rpi.sh`
-  - Starts `client.py` loading Python env (pyenv or venv fallback).
-  - With args: forwards args to `client.py` (example: `--oneshot`).
-  - Without args: runs continuous capture using `CAPTURE_INTERVAL` (default 30s).
+  - Raspberry Pi camera wrapper (oneshot and loop mode through API orchestration).
 
-- `systemd/`
-  - User services for unattended startup:
-    - `agriapp-server.service`
+- `scripts/capture_esp.py`
+  - ESP serial/http helper for ESP capture proxy paths.
 
-- `old/`
-  - Deprecated legacy scripts kept only for reference.
+- `scripts/run_server.sh`
+  - Server launcher with `.env.systemd` loading and pyenv/venv support.
 
-## Quick Start
+- `deploy_rpi.sh`
+  - Daily operations helper:
+    - sync/mount/ssh
+    - reload server (remote + local)
+    - ESP build/flash
+    - Android build/install/run
+
+## 3. Quick Start
 
 Install dependencies:
 
@@ -37,70 +65,158 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Run server:
+Run locally:
 
 ```bash
-python server.py
+python3 -B server.py
 ```
 
 Open:
 
 ```text
-http://<rpi-ip>:5000/gallery
-http://<rpi-ip>:5000/health
+http://127.0.0.1:5000/studio
+http://127.0.0.1:5000/rpi
 ```
 
-Single photo capture:
+### Runtime role selection
+
+The same backend can run as `rpi` or `studio` UI role.
+
+Set role in `.env.systemd`:
 
 ```bash
-python client.py --oneshot
+APP_ROLE=rpi
+# or
+APP_ROLE=studio
 ```
 
-Continuous capture every 5 minutes:
+If `APP_ROLE` is not set, role is inferred from `APP_BRAND` (`studio` keyword -> Studio mode, otherwise RPi mode).
+
+## 4. RPi Deployment Workflow
+
+Sync code to Raspberry Pi:
 
 ```bash
-python client.py --interval 300
+./deploy_rpi.sh --sync
 ```
 
-## Recommended Camera Commands
-
-Default tuned single shot (current project defaults are already optimized):
+Reload backend on Raspberry Pi:
 
 ```bash
-python client.py --oneshot
+./deploy_rpi.sh --reload-server
 ```
 
-Manual example with explicit values:
+Reload local Studio service:
 
 ```bash
-python client.py --oneshot --profile standard --af-mode continuous --af-range full --zoom 1.0 --quality 100 --warmup-ms 2000 --timeout-ms 3000 --af-window 0.35,0.35,0.30,0.30
+./deploy_rpi.sh --reload-local-server
 ```
 
-## Environment File
-
-Optional file used by wrapper scripts:
-
-`~/agri-app/.env.systemd`
-
-Example:
+Mount remote home:
 
 ```bash
-PYENV_ROOT=/home/fra/pyenv
-# optional if you use pyenv manager (not needed for plain venv fallback)
-# PYENV_VERSION=agriapp-rpi
-CAPTURE_INTERVAL=300
-# GPS tuning (optional)
-# AGRIAPP_GPS_PORTS=/dev/serial0,/dev/ttyACM0,/dev/ttyUSB0
-# AGRIAPP_GPS_BAUD=9600
-# AGRIAPP_GPS_TIMEOUT=4
-# AGRIAPP_GPS_CACHE_TTL=8
+./deploy_rpi.sh --mount
+./deploy_rpi.sh --umount
 ```
 
-## GPS Notes
+Useful deploy modes (full list: `./deploy_rpi.sh --help`):
 
-- Backend GPS reads are now guarded by a process lock and short cache TTL to reduce serial contention.
-- Default UART preference is `"/dev/serial0"` (GPIO wiring).
-- For manual GPS diagnostics, stop the server first to guarantee exclusive serial access:
+- `--sync`, `--sync-dry`
+- `--reload-server` (RPi service)
+- `--reload-local-server` (local Studio service)
+- `--local-service <name>` (override local service name)
+- `--esp-build`, `--esp-flash`
+- `--android-build`, `--android-install`, `--android-run`, `--android-cir`
+
+## 5. Service Management
+
+### RPi service
+
+```bash
+systemctl --user start agriapp-server.service
+systemctl --user stop agriapp-server.service
+systemctl --user restart agriapp-server.service
+systemctl --user status agriapp-server.service
+journalctl --user -u agriapp-server.service -f
+```
+
+### Local Studio service
+
+```bash
+scripts/install_local_user_service.sh
+systemctl --user restart agriapp-local.service
+systemctl --user status agriapp-local.service
+```
+
+## 6. Capture Operations
+
+### API one-shot (RPi)
+
+```bash
+curl -X POST http://<rpi-ip>:5000/api/v1/capture/rpi/oneshot
+```
+
+### API loop (RPi)
+
+```bash
+curl http://<rpi-ip>:5000/api/v1/capture/loop/status
+
+curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/start \
+  -H "Content-Type: application/json" \
+  -d '{"interval_seconds":300}'
+
+curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/stop
+```
+
+### ESP API capture (optional path)
+
+```bash
+curl "http://<rpi-ip>:5000/api/v1/capture/esp/oneshot?esp_base=http://192.168.4.239"
+```
+
+Notes:
+- ESP endpoints remain in `/api/v1`.
+- Current web RPi surface is intentionally simplified and field-focused.
+
+### Direct CLI one-shot (RPi)
+
+```bash
+python3 client.py --oneshot
+```
+
+## 7. Export / Import Workflow
+
+### Export (RPi web gallery)
+- `Export all` -> full dataset ZIP
+- `Export visible` -> current paginated/filtered selection ZIP
+
+Export names include timestamp:
+- `agriapp_dataset_YYYYMMDD-HHMMSS.zip`
+- `agriapp_dataset_visible_YYYYMMDD-HHMMSS.zip`
+
+### Import (Studio web system)
+- Open `/studio/system`
+- Upload exported ZIP
+- Optional `Overwrite`
+- Read JSON report (imported/skipped/errors)
+
+## 8. Metadata (GPS + BME280)
+
+Per-image sidecar metadata is stored in:
+- `static/uploads/metadata/<stem>.json`
+
+Fields:
+- `latitude`, `longitude`
+- `temperature`, `humidity`, `pressure`
+- `user_comment`
+
+Best-effort policy:
+- capture does not fail when one sensor is unavailable.
+- values are persisted when available.
+
+## 9. GPS Notes
+
+GPS serial access is lock-protected in backend. For manual serial diagnostics, stop the server first:
 
 ```bash
 systemctl --user stop agriapp-server.service
@@ -109,84 +225,38 @@ python3 test/test-gps.py --port /dev/serial0 --baud 9600 --watch --raw
 systemctl --user start agriapp-server.service
 ```
 
-## Boot Autostart (Systemd User Services)
+## 10. Data Folders
 
-Install services on Raspberry Pi:
+- Images: `static/uploads/images`
+- Labels TXT: `static/uploads/labels`
+- Labels JSON: `static/uploads/jsons`
+- Metadata: `static/uploads/metadata`
+- Thumbnails cache: `static/uploads/thumbs`
 
-```bash
-cd ~/agri-app
-./scripts/install_systemd_user_services.sh
+## 11. Environment File (`.env.systemd`)
+
+Path:
+
+```text
+~/agri-app/.env.systemd
 ```
 
-Enable lingering (required for user services at boot, without interactive login):
+Example:
 
 ```bash
-sudo loginctl enable-linger fra
+PYENV_ROOT=/home/fra/pyenv
+LABELER_READONLY=1
+APP_BRAND="AgriApp RPi"
+APP_ICON=🌿
+# Optional explicit role: rpi | studio
+# APP_ROLE=rpi
 ```
 
-### Operational Commands (`--user` required)
+## 12. Notes
 
-```bash
-# Server
-systemctl --user start agriapp-server.service
-systemctl --user stop agriapp-server.service
-systemctl --user restart agriapp-server.service
-systemctl --user status agriapp-server.service
-systemctl --user enable agriapp-server.service
-systemctl --user disable agriapp-server.service
-
-# Logs
-journalctl --user -u agriapp-server.service -n 100 --no-pager
-journalctl --user -u agriapp-server.service -f
-```
-
-### Capture Loop via API (recommended)
-
-```bash
-# Status
-curl http://<rpi-ip>:5000/api/v1/capture/loop/status
-
-# Start every 300 seconds
-curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/start \
-  -H "Content-Type: application/json" \
-  -d '{"interval_seconds":300}'
-
-# Stop
-curl -X POST http://<rpi-ip>:5000/api/v1/capture/loop/stop
-```
-
-## Notes
-
-- Current preferred deployment strategy:
-  - `systemd` for server
-  - timed capture controlled via API (`/api/v1/capture/loop/*`) from web/tablet.
-- Canonical API surface is versioned under `/api/v1` (legacy aliases removed).
-- Web UI is offline-safe in AP mode (Bootstrap/Socket.IO served locally from `static/vendor`).
-- Web UI is currently operated in `RPi-only` mode (ESP controls hidden from Capture/System/Health pages to reduce field complexity).
-- ESP backend endpoints remain available for diagnostics/experiments (`/api/v1/capture/esp/*`, `/api/v1/esp/status`).
-- ESP capture preset used by backend one-shot proxy is stabilized to:
-  - `framesize=qxga`
-  - `quality=10`
-- Current ESP camera baseline is OV3660. OV5640 was tested and discarded in this setup due to recurrent optical artifacts.
-- The gallery/labeler work on images in:
-  - `static/uploads/images`
-  - labels in `static/uploads/labels`
-  - JSON annotations in `static/uploads/jsons`
-
-## Deploy Helper (Local)
-
-`deploy_rpi.sh` now also supports Android app lifecycle commands:
-
-```bash
-# Compile only
-./deploy_rpi.sh --android-build
-
-# Install current debug APK on connected tablet
-./deploy_rpi.sh --android-install
-
-# Launch app on tablet
-./deploy_rpi.sh --android-run
-
-# Compile + Install + Run
-./deploy_rpi.sh --android-cir
-```
+- Bootstrap and Socket.IO assets are vendored locally (`static/vendor`) for offline/AP robustness.
+- ESP APIs remain available; daily field baseline currently prioritizes RPi capture path.
+- Canonical operational API namespace is `/api/v1`.
+- Script reference: `scripts/README.md`.
+- `scripts/esp_capture.sh` is legacy/deprecated; prefer `scripts/capture_esp.py`.
+- If UI style changes are not visible after deploy, force reload browser cache (`Ctrl+F5`).

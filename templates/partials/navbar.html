@@ -1,6 +1,6 @@
 <nav class="navbar navbar-expand-lg navbar-light">
     <div class="container">
-        <a class="navbar-brand" href="/">🌿 AgriApp</a>
+        <a class="navbar-brand" href="/">{{ app_icon }} {{ app_brand }}</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -8,9 +8,11 @@
             <ul class="navbar-nav ms-auto">
                 <li class="nav-item"><a class="nav-link{% if request.path == '/' %} active{% endif %}" href="/">Home</a></li>
                 <li class="nav-item"><a class="nav-link{% if request.path == '/gallery' %} active{% endif %}" href="/gallery">Gallery</a></li>
+                {% if app_role != 'studio' %}
                 <li class="nav-item"><a class="nav-link{% if request.path == '/capture' %} active{% endif %}" href="/capture">Capture</a></li>
                 <li class="nav-item"><a class="nav-link{% if request.path == '/system' %} active{% endif %}" href="/system">System</a></li>
                 <li class="nav-item"><a class="nav-link{% if request.path == '/health' %} active{% endif %}" href="/health">Health</a></li>
+                {% endif %}
                 <li class="nav-item"><a class="nav-link{% if request.path == '/log' %} active{% endif %}" href="/log">Log</a></li>
             </ul>
         </div>

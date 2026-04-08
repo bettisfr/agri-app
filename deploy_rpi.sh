@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Deploy project to Raspberry Pi via rsync over SSH.
 # Modes: --mount, --umount, --sync, --sync-dry, --ssh, --remote-cmd,
-#        --git-pull, --git-push, --git-commit, --reload-server, --esp-build, --esp-flash,
+#        --git-pull, --git-push, --git-commit, --reload-server, --reload-local-server,
+#        --esp-build, --esp-flash,
 #        --android-build, --android-install, --android-run, --android-cir.
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
@@ -24,6 +25,7 @@ ESP_SKETCH_DIR="firmware/esp32-cam"
 ANDROID_DIR="mobile/android"
 ANDROID_APK="app/build/outputs/apk/debug/app-debug.apk"
 ANDROID_COMPONENT="it.unipg.agriapp/.MainActivity"
+LOCAL_SERVER_SERVICE="agriapp-local.service"
 
 usage() {
   cat <<EOF
@@ -41,6 +43,7 @@ Modes (choose one):
   --git-push             Run git push in local repo.
   --git-commit           Commit local changes (requires --msg "...").
   --reload-server        Restart agriapp server service on Raspberry Pi.
+  --reload-local-server  Restart local Studio server service.
   --esp-build            Compile ESP32 firmware with arduino-cli.
   --esp-flash            Compile + flash ESP32 firmware.
   --android-build        Build Android debug APK.
@@ -67,6 +70,7 @@ Android options:
   --android-dir <dir>            Android project dir (default: ${ANDROID_DIR}).
   --android-apk <rel_path>       APK path from android dir (default: ${ANDROID_APK}).
   --android-component <pkg/.Act> Activity component (default: ${ANDROID_COMPONENT}).
+  --local-service <name>        Local server service (default: ${LOCAL_SERVER_SERVICE}).
 
 Help:
   -h, --help                     Show this help message.
@@ -104,6 +108,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --reload-server)
       MODE="reload-server"
+      ;;
+    --reload-local-server)
+      MODE="reload-local-server"
       ;;
     --esp-build)
       MODE="esp-build"
@@ -235,6 +242,14 @@ while [[ $# -gt 0 ]]; do
       ANDROID_COMPONENT="$2"
       shift
       ;;
+    --local-service)
+      if [[ -z "${2:-}" ]]; then
+        usage
+        exit 1
+      fi
+      LOCAL_SERVER_SERVICE="$2"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -315,6 +330,13 @@ else \
 fi"
   echo "[RELOAD-SERVER] ${SSH_TARGET} (${REMOTE_PATH})"
   "${SSH_CMD[@]}" "${REMOTE_SERVER_CMD}"
+  exit 0
+fi
+
+if [[ "${MODE}" == "reload-local-server" ]]; then
+  echo "[RELOAD-LOCAL-SERVER] service=${LOCAL_SERVER_SERVICE}"
+  systemctl --user restart "${LOCAL_SERVER_SERVICE}"
+  systemctl --user --no-pager --full status "${LOCAL_SERVER_SERVICE}" | sed -n '1,12p'
   exit 0
 fi
 
@@ -415,6 +437,7 @@ COMMON_ARGS=(
   --no-perms
   --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r
   --exclude='.git/'
+  --exclude='.env.systemd'
   --exclude='.idea/'
   --exclude='.codex-project-id'
   --exclude='__pycache__/'

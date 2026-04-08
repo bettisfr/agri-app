@@ -22,6 +22,8 @@ const CLASS_CONFIG = {
 };
 
 const CLASS_DEFS = CLASS_CONFIG[APP_CONTEXT] || CLASS_CONFIG.cimici;
+const QUERY_PARAMS = new URLSearchParams(window.location.search);
+const READ_ONLY = (QUERY_PARAMS.get("readonly") || "").toLowerCase() === "1";
 
 const CLASS_MAP = CLASS_DEFS.reduce((acc, c) => {
     acc[c.id] = c.label;
@@ -152,6 +154,7 @@ const uiList = {
             });
 
             clsInput.addEventListener("change", (e) => {
+                if (READ_ONLY) return;
                 const newVal = parseInt(e.target.value, 10);
                 lab.cls = Number.isNaN(newVal) ? 0 : newVal;
 
@@ -160,6 +163,10 @@ const uiList = {
                 drawing.drawBBoxes(img, canvas, labels);
                 this.renderLabelsList();
             });
+            if (READ_ONLY) {
+                clsInput.disabled = true;
+                clsInput.title = "Read-only";
+            }
 
             row.appendChild(selectBtn);
             row.appendChild(clsInput);
@@ -569,6 +576,7 @@ const drawing = {
         const canvas = byId("bboxCanvas");
         const img = byId("previewImage");
         if (!canvas || !img) return;
+        if (READ_ONLY) return;
 
         const posFromEvent = (event) => {
             const rect = canvas.getBoundingClientRect();
@@ -759,6 +767,10 @@ const api = {
     },
 
     async saveLabels() {
+        if (READ_ONLY) {
+            uiList.setStatus("Read-only mode: saving is disabled.");
+            return;
+        }
         if (!currentImage || !currentImage.name) {
             uiList.setStatus("No image loaded, cannot save.", "error");
             return;
@@ -870,7 +882,11 @@ const api = {
         uiList.updateTpFpSummary();
         if (controls) controls.classList.remove("disabled");
 
-        uiList.setStatus(`Loaded ${filename} (${labels.length} labels)`);
+        if (READ_ONLY) {
+            uiList.setStatus(`Loaded ${filename}`);
+        } else {
+            uiList.setStatus(`Loaded ${filename} (${labels.length} labels)`);
+        }
     },
 };
 
@@ -883,6 +899,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const saveBtn = byId("saveTxtBtn");
     if (saveBtn) {
+        if (READ_ONLY) {
+            saveBtn.style.display = "none";
+        }
         saveBtn.addEventListener("click", () => {
             api.saveLabels();
         });
@@ -890,15 +909,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const downloadBtn = byId("downloadCurrentBtn");
     if (downloadBtn) {
+        if (READ_ONLY) {
+            downloadBtn.textContent = "Export";
+        }
         downloadBtn.addEventListener("click", () => {
             if (!currentImage || !currentImage.name) {
                 uiList.setStatus("No image loaded, cannot download.", "error");
                 return;
             }
-            const url = `/api/v1/images/download-with-labels?image=${encodeURIComponent(currentImage.name)}`;
+            const url = READ_ONLY
+                ? `/api/v1/images/download?image=${encodeURIComponent(currentImage.name)}`
+                : `/api/v1/images/download-with-labels?image=${encodeURIComponent(currentImage.name)}`;
             window.location.href = url;
         });
     }
 
     api.initFromQueryParam();
+    if (READ_ONLY) {
+        uiList.setStatus("Read-only mode: annotations are disabled.");
+        const hint = byId("labelerHint");
+        if (hint) {
+            hint.textContent = "Read-only mode. Middle/right drag to pan, wheel to zoom.";
+        }
+        const infoRowLabels = byId("infoRowLabels");
+        const infoRowTp = byId("infoRowTp");
+        const infoRowFp = byId("infoRowFp");
+        const labelsPanel = byId("labelsPanel");
+        if (infoRowLabels) infoRowLabels.style.display = "none";
+        if (infoRowTp) infoRowTp.style.display = "none";
+        if (infoRowFp) infoRowFp.style.display = "none";
+        if (labelsPanel) labelsPanel.style.display = "none";
+    }
 });

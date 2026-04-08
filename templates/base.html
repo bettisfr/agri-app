@@ -6,11 +6,15 @@
     <title>AgriApp - {% block page_title %}Home{% endblock %}</title>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
     <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='site-ui.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='site-ui.css') }}?v=20260408-studio-red" rel="stylesheet">
     {% block extra_head %}{% endblock %}
 </head>
-<body class="{% block body_class %}gallery-page{% endblock %}">
-{% include "partials/navbar.html" %}
+<body class="{% block body_class %}gallery-page{% endblock %}{% if ui_mode == 'studio' %} ui-mode-studio{% endif %}{% if ui_mode == 'rpi' %} ui-mode-rpi{% endif %}">
+{% if ui_mode == "studio" %}
+{% include "partials/navbar_studio.html" %}
+{% else %}
+{% include "partials/navbar_rpi.html" %}
+{% endif %}
 
 {% block content %}{% endblock %}
 

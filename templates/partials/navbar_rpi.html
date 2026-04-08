@@ -1,0 +1,18 @@
+<nav class="navbar navbar-expand-lg navbar-light">
+    <div class="container">
+        <a class="navbar-brand" href="/rpi">{{ app_icon }} {{ app_brand }}</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link{% if request.path == '/rpi' %} active{% endif %}" href="/rpi">Home</a></li>
+                <li class="nav-item"><a class="nav-link{% if request.path == '/rpi/gallery' %} active{% endif %}" href="/rpi/gallery">Gallery</a></li>
+                <li class="nav-item"><a class="nav-link{% if request.path == '/rpi/capture' %} active{% endif %}" href="/rpi/capture">Capture</a></li>
+                <li class="nav-item"><a class="nav-link{% if request.path == '/rpi/system' %} active{% endif %}" href="/rpi/system">System</a></li>
+                <li class="nav-item"><a class="nav-link{% if request.path == '/rpi/health' %} active{% endif %}" href="/rpi/health">Health</a></li>
+                <li class="nav-item"><a class="nav-link{% if request.path == '/rpi/log' %} active{% endif %}" href="/rpi/log">Log</a></li>
+            </ul>
+        </div>
+    </div>
+</nav>

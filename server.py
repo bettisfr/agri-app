@@ -7,6 +7,7 @@ import glob
 import zipfile
 import time
 import json
+import shutil
 import datetime  # needed for timestamp parsing
 import socket
 import subprocess
@@ -15,6 +16,7 @@ import urllib.request
 import ipaddress
 import struct
 import threading
+import re
 
 from backend.bme_reader import get_bme280_reading
 from backend.gps_reader import get_gps_fix
@@ -62,6 +64,14 @@ ESP_CAPTURE_LOOP_LOCK = threading.Lock()
 ESP_CAPTURE_LOOP_LOG = os.path.join("/tmp", "agriapp-esp-capture-loop.log")
 ESP_ONESHOT_LOCK = threading.Lock()
 RUNTIME_EVENTS_LOG = os.path.join("/tmp", "agriapp-runtime-events.log")
+LABELER_READONLY = (os.environ.get("LABELER_READONLY", "0").strip().lower() in ("1", "true", "yes", "on"))
+APP_BRAND = (os.environ.get("APP_BRAND", "AgriApp").strip() or "AgriApp")
+APP_ICON = (os.environ.get("APP_ICON", "🌿").strip() or "🌿")
+_APP_ROLE_ENV = os.environ.get("APP_ROLE", "").strip().lower()
+if _APP_ROLE_ENV in ("studio", "rpi"):
+    APP_ROLE = _APP_ROLE_ENV
+else:
+    APP_ROLE = "studio" if "studio" in APP_BRAND.lower() else "rpi"
 
 
 def _capture_loop_script_path() -> str:
@@ -80,6 +90,16 @@ def _append_runtime_event(source: str, message: str) -> None:
             f.write(line)
     except Exception:
         pass
+
+
+@app.context_processor
+def inject_runtime_config():
+    return {
+        "labeler_readonly": LABELER_READONLY,
+        "app_brand": APP_BRAND,
+        "app_icon": APP_ICON,
+        "app_role": APP_ROLE,
+    }
 
 
 def _capture_loop_is_running() -> bool:
@@ -668,13 +688,24 @@ def get_sorted_images(image_folder):
         base_name, _ = os.path.splitext(filename)
 
         try:
-            # Take the part before the first underscore
-            prefix = base_name.split("_", 1)[0]  # "2023-07-20T20-19-46+0200"
+            # Legacy format, e.g. "2023-07-20T20-19-46+0200_xxx"
+            prefix = base_name.split("_", 1)[0]
             dt = datetime.datetime.strptime(prefix, "%Y-%m-%dT%H-%M-%S%z")
             return dt.timestamp()
         except Exception:
-            # Fallback: filesystem mtime
-            return os.path.getmtime(file_path)
+            pass
+
+        try:
+            # AgriApp format, e.g. "rpi_20260408-100903", "esp_20260408-100903", "img_20260408-100903"
+            m = re.search(r"(\d{8}-\d{6})", base_name)
+            if m:
+                dt = datetime.datetime.strptime(m.group(1), "%Y%m%d-%H%M%S")
+                return dt.timestamp()
+        except Exception:
+            pass
+
+        # Fallback: filesystem mtime
+        return os.path.getmtime(file_path)
 
     image_files = [
         f
@@ -719,32 +750,122 @@ def get_sorted_images(image_folder):
 # ----------------------------------------------------------------------
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", ui_mode=("studio" if APP_ROLE == "studio" else "rpi"))
 
 
+@app.route("/rpi")
+def rpi_index():
+    return render_template("index.html", ui_mode="rpi")
+
+
+@app.route("/rpi/gallery")
+def rpi_gallery():
+    return render_template(
+        "gallery.html",
+        ui_mode="rpi",
+        gallery_labeler_readonly=True,
+        label_page_path="/rpi/label",
+    )
+
+
+@app.route("/rpi/capture")
+def rpi_capture_page():
+    return render_template("capture.html", ui_mode="rpi")
+
+
+@app.route("/rpi/system")
+def rpi_system_page():
+    return render_template("system.html", ui_mode="rpi")
+
+
+@app.route("/rpi/log")
+def rpi_log_page():
+    return render_template("log.html", ui_mode="rpi")
+
+
+@app.route("/rpi/health")
+def rpi_health_page():
+    return render_template("health.html", ui_mode="rpi")
+
+
+@app.route("/rpi/label")
+def rpi_label_page():
+    return render_template("labeler.html", ui_mode="rpi")
+
+
+@app.route("/studio")
+def studio_index():
+    return render_template("index.html", ui_mode="studio")
+
+
+@app.route("/studio/gallery")
+def studio_gallery():
+    return render_template(
+        "gallery.html",
+        ui_mode="studio",
+        gallery_labeler_readonly=False,
+        label_page_path="/studio/label",
+    )
+
+
+@app.route("/studio/system")
+def studio_system_page():
+    return render_template("system_studio.html", ui_mode="studio")
+
+
+@app.route("/studio/log")
+def studio_log_page():
+    return render_template("log.html", ui_mode="studio")
+
+
+@app.route("/studio/label")
+def studio_label_page():
+    return render_template("labeler.html", ui_mode="studio")
+
+
+# Legacy routes served directly (no redirect).
 @app.route("/gallery")
 def gallery():
-    return render_template("gallery.html")
+    if APP_ROLE == "studio":
+        return render_template(
+            "gallery.html",
+            ui_mode="studio",
+            gallery_labeler_readonly=False,
+            label_page_path="/studio/label",
+        )
+    return render_template(
+        "gallery.html",
+        ui_mode="rpi",
+        gallery_labeler_readonly=True,
+        label_page_path="/rpi/label",
+    )
 
 
 @app.route("/capture")
 def capture_page():
-    return render_template("capture.html")
+    return render_template("capture.html", ui_mode="rpi")
 
 
 @app.route("/system")
 def system_page():
-    return render_template("system.html")
+    if APP_ROLE == "studio":
+        return render_template("system_studio.html", ui_mode="studio")
+    return render_template("system.html", ui_mode="rpi")
 
 
 @app.route("/log")
 def log_page():
-    return render_template("log.html")
+    return render_template("log.html", ui_mode=("studio" if APP_ROLE == "studio" else "rpi"))
 
 
 @app.route("/health")
 def health_page():
-    return render_template("health.html")
+    return render_template("health.html", ui_mode="rpi")
+
+
+@app.route("/label")
+def label_page():
+    return render_template("labeler.html", ui_mode=("studio" if APP_ROLE == "studio" else "rpi"))
 
 
 @app.route("/api/v1/logs")
@@ -1036,15 +1157,6 @@ def api_logs_stream():
     )
 
 
-@app.route("/label")
-def label_page():
-    """Render the labeler UI for a given image (?image=...)."""
-    image_name = request.args.get("image")
-    if not image_name:
-        return "Missing 'image' parameter", 400
-    return render_template("labeler.html", image_name=image_name)
-
-
 @app.route("/api/v1/labels", methods=["GET"])
 def get_labels():
     """
@@ -1123,6 +1235,9 @@ def save_labels():
     - jsons/<stem>.json: full boxes with is_tp (True/False).
     - labels/<stem>.txt: only boxes with is_tp == True (YOLO format).
     """
+    if LABELER_READONLY:
+        return jsonify({"status": "error", "message": "read-only mode: labels cannot be modified"}), 403
+
     data = request.get_json(silent=True) or {}
     image_name = normalize_image_filename(data.get("image", ""))
     labels = data.get("labels", [])
@@ -2256,15 +2371,16 @@ def download_dataset():
 
     memory_file.seek(0)
 
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     return send_file(
         memory_file,
         mimetype="application/zip",
         as_attachment=True,
-        download_name="agriapp_dataset.zip",
+        download_name=f"agriapp_dataset_{ts}.zip",
     )
 
 
-@app.route("/api/v1/download/dataset-selected", methods=["POST"])
+@app.route("/api/v1/download/dataset-selected", methods=["GET", "POST"])
 def download_dataset_selected():
     """
     Create a zip on the fly containing only selected images and their related
@@ -2272,10 +2388,16 @@ def download_dataset_selected():
     Expects JSON body:
       { "filenames": ["rpi_20260313-101500.jpg", "esp_20260313-101530.jpg", ...] }
     """
-    data = request.get_json(silent=True) or {}
-    filenames = data.get("filenames", [])
-    if not isinstance(filenames, list):
-        return jsonify({"error": "filenames must be a list"}), 400
+    if request.method == "GET":
+        filenames = request.args.getlist("filename")
+        raw_csv = request.args.get("filenames", "")
+        if raw_csv:
+            filenames.extend([p.strip() for p in raw_csv.split(",") if p.strip()])
+    else:
+        data = request.get_json(silent=True) or {}
+        filenames = data.get("filenames", [])
+        if not isinstance(filenames, list):
+            return jsonify({"error": "filenames must be a list"}), 400
 
     clean_names = []
     for raw in filenames:
@@ -2326,11 +2448,80 @@ def download_dataset_selected():
         return jsonify({"error": "No matching images found"}), 404
 
     memory_file.seek(0)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     return send_file(
         memory_file,
         mimetype="application/zip",
         as_attachment=True,
-        download_name="agriapp_dataset_visible.zip",
+        download_name=f"agriapp_dataset_visible_{ts}.zip",
+    )
+
+
+@app.route("/api/v1/download/dataset-visible")
+def download_dataset_visible_get():
+    """
+    GET variant for visible export, easier for direct browser download.
+    Query parameters:
+      - filename=<name> (repeatable) or
+      - filenames=<comma,separated,list>
+    """
+    raw_many = request.args.getlist("filename")
+    raw_csv = request.args.get("filenames", "")
+    if raw_csv:
+        raw_many.extend([p.strip() for p in raw_csv.split(",") if p.strip()])
+
+    clean_names = []
+    for raw in raw_many:
+        if not isinstance(raw, str):
+            continue
+        fname = secure_filename(os.path.basename(raw))
+        if not fname:
+            continue
+        clean_names.append(fname)
+
+    clean_names = list(dict.fromkeys(clean_names))
+    if not clean_names:
+        return jsonify({"error": "No valid filenames provided"}), 400
+
+    memory_file = io.BytesIO()
+    written = {"images": 0, "labels": 0, "jsons": 0, "metadata": 0}
+
+    with zipfile.ZipFile(memory_file, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for fname in clean_names:
+            image_path = os.path.join(IMAGES_DIR, fname)
+            if not os.path.exists(image_path):
+                continue
+
+            zf.write(image_path, os.path.join("images", fname))
+            written["images"] += 1
+
+            stem, _ = os.path.splitext(fname)
+
+            label_path = os.path.join(LABELS_DIR, stem + ".txt")
+            if os.path.exists(label_path):
+                zf.write(label_path, os.path.join("labels", stem + ".txt"))
+                written["labels"] += 1
+
+            json_path = os.path.join(JSONS_DIR, stem + ".json")
+            if os.path.exists(json_path):
+                zf.write(json_path, os.path.join("jsons", stem + ".json"))
+                written["jsons"] += 1
+
+            metadata_path = os.path.join(METADATA_DIR, stem + ".json")
+            if os.path.exists(metadata_path):
+                zf.write(metadata_path, os.path.join("metadata", stem + ".json"))
+                written["metadata"] += 1
+
+    if written["images"] == 0:
+        return jsonify({"error": "No matching images found"}), 404
+
+    memory_file.seek(0)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    return send_file(
+        memory_file,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"agriapp_dataset_visible_{ts}.zip",
     )
 
 
@@ -2369,12 +2560,175 @@ def download_image_with_labels():
             zf.write(metadata_path, os.path.join("metadata", stem + ".json"))
 
     memory_file.seek(0)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     return send_file(
         memory_file,
         mimetype="application/zip",
         as_attachment=True,
-        download_name=f"{stem}_labels_bundle.zip",
+        download_name=f"{stem}_export_{ts}.zip",
     )
+
+
+@app.route("/api/v1/images/download")
+def download_image_only():
+    """
+    Download one image as attachment (forces browser save dialog).
+
+    Query parameters:
+      - image: image filename
+    """
+    image_raw = request.args.get("image", "")
+    filename = secure_filename(os.path.basename(image_raw))
+    if not filename:
+        return jsonify({"error": "image parameter missing"}), 400
+
+    image_path = os.path.join(IMAGES_DIR, filename)
+    if not os.path.exists(image_path):
+        return jsonify({"error": "image not found"}), 404
+
+    return send_file(
+        image_path,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="image/jpeg",
+    )
+
+
+@app.route("/api/v1/studio/import", methods=["POST"])
+def api_studio_import_dataset():
+    """
+    Import a dataset ZIP (exported from RPi) into local Studio storage.
+
+    Form fields:
+      - dataset: zip file
+      - overwrite: 1|0 (optional, default 0)
+    """
+    if "dataset" not in request.files:
+        return jsonify({"status": "error", "message": "missing file field 'dataset'"}), 400
+
+    upload = request.files["dataset"]
+    if not upload or not upload.filename:
+        return jsonify({"status": "error", "message": "empty upload"}), 400
+
+    if not upload.filename.lower().endswith(".zip"):
+        return jsonify({"status": "error", "message": "dataset must be a .zip file"}), 400
+
+    overwrite_raw = str(request.form.get("overwrite", "0")).strip().lower()
+    overwrite = overwrite_raw in ("1", "true", "yes", "on")
+
+    dir_map = {
+        "images": IMAGES_DIR,
+        "labels": LABELS_DIR,
+        "jsons": JSONS_DIR,
+        "json": JSONS_DIR,
+        "metadata": METADATA_DIR,
+    }
+    ext_map = {
+        "images": {".jpg", ".jpeg", ".png", ".webp"},
+        "labels": {".txt"},
+        "jsons": {".json"},
+        "json": {".json"},
+        "metadata": {".json"},
+    }
+
+    report = {
+        "status": "success",
+        "overwrite": overwrite,
+        "imported": {"images": 0, "labels": 0, "jsons": 0, "metadata": 0},
+        "skipped_existing": 0,
+        "skipped_invalid": 0,
+        "errors": [],
+    }
+    imported_images = set()
+
+    def _bucket_name(section: str) -> str:
+        if section in ("json", "jsons"):
+            return "jsons"
+        return section
+
+    try:
+        with zipfile.ZipFile(upload.stream, "r") as zf:
+            for info in zf.infolist():
+                try:
+                    if info.is_dir():
+                        continue
+
+                    raw_name = (info.filename or "").replace("\\", "/").lstrip("/")
+                    if not raw_name:
+                        report["skipped_invalid"] += 1
+                        continue
+
+                    parts = [p for p in raw_name.split("/") if p and p != "."]
+                    if len(parts) < 2 or any(p == ".." for p in parts):
+                        report["skipped_invalid"] += 1
+                        continue
+
+                    section = parts[0].lower()
+                    if section not in dir_map:
+                        report["skipped_invalid"] += 1
+                        continue
+
+                    leaf_name = secure_filename(parts[-1])
+                    if not leaf_name:
+                        report["skipped_invalid"] += 1
+                        continue
+
+                    ext = os.path.splitext(leaf_name)[1].lower()
+                    if ext not in ext_map.get(section, set()):
+                        report["skipped_invalid"] += 1
+                        continue
+
+                    target_dir = dir_map[section]
+                    target_path = os.path.join(target_dir, leaf_name)
+                    if os.path.exists(target_path) and not overwrite:
+                        report["skipped_existing"] += 1
+                        continue
+
+                    data = zf.read(info)
+                    tmp_path = f"{target_path}.tmp-{int(time.time() * 1000)}"
+                    with open(tmp_path, "wb") as f:
+                        f.write(data)
+                    shutil.move(tmp_path, target_path)
+
+                    report["imported"][_bucket_name(section)] += 1
+                    if section == "images":
+                        imported_images.add(leaf_name)
+                except Exception as e:
+                    report["errors"].append(f"{info.filename}: {e}")
+    except zipfile.BadZipFile:
+        return jsonify({"status": "error", "message": "invalid zip file"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"import failed: {e}"}), 500
+
+    # Ensure thumbnails are regenerated on next request for imported images.
+    removed_thumbs = 0
+    for img_name in imported_images:
+        try:
+            removed_thumbs += remove_thumbnails_for_image(img_name)
+        except Exception:
+            pass
+
+    # Ensure metadata exists for imported images when missing.
+    for img_name in imported_images:
+        img_path = os.path.join(IMAGES_DIR, img_name)
+        mpath = metadata_path_for_image_path(img_path)
+        if not os.path.exists(mpath):
+            try:
+                save_metadata_for_image_path(img_path, DEFAULT_METADATA.copy())
+                report["imported"]["metadata"] += 1
+            except Exception as e:
+                report["errors"].append(f"metadata:{img_name}:{e}")
+
+    report["imported_total"] = (
+        report["imported"]["images"]
+        + report["imported"]["labels"]
+        + report["imported"]["jsons"]
+        + report["imported"]["metadata"]
+    )
+    report["thumbnails_removed"] = removed_thumbs
+    report["errors_count"] = len(report["errors"])
+
+    return jsonify(report), 200
 
 
 if __name__ == "__main__":

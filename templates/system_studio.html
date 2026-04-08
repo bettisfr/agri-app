@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block page_title %}System{% endblock %}
+{% block body_class %}gallery-page{% endblock %}
+
+{% block content %}
+<div class="container my-5 gallery-shell">
+    <section class="gallery-hero">
+        <div>
+            <p class="gallery-kicker">Studio Console</p>
+            <h1 class="section-title mb-0">System</h1>
+            <p class="gallery-subtitle mb-0">Dataset import tools for local curation.</p>
+        </div>
+    </section>
+
+    <div class="card mb-3"><div class="card-body">
+        <h2 class="h5 mb-3">Dataset Import</h2>
+        <div class="row g-2 align-items-center">
+            <div class="col-12 col-md-7">
+                <input type="file" id="importDatasetZip" class="form-control" accept=".zip">
+            </div>
+            <div class="col-12 col-md-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="importOverwrite">
+                    <label class="form-check-label" for="importOverwrite">Overwrite</label>
+                </div>
+            </div>
+            <div class="col-12 col-md-3 d-grid">
+                <button type="button" class="btn btn-success" id="importDatasetBtn">Import ZIP</button>
+            </div>
+        </div>
+        <div class="mt-2"><strong>Import report:</strong></div>
+        <pre id="importReport" class="mb-0 mt-1 p-2 bg-light border rounded" style="max-height: 260px; overflow: auto;">No import executed yet.</pre>
+        <div class="mt-2"><strong>Status:</strong> <span id="systemMessage">Ready</span></div>
+    </div></div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='system-studio-page.js') }}"></script>
+{% endblock %}

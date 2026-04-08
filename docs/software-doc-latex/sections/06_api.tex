@@ -1,102 +1,102 @@
 \section{API Specification}
 
 \subsection{Contract Strategy}
-AgriApp adopts \texttt{/api/v1} as the canonical API namespace for all active client integrations (web and Android). The objective is contract stability across iterative releases: new features are added under versioned routes, while historical aliases are retained only for backward compatibility during migration.
-
-All operational clients should target \texttt{/api/v1} endpoints first. Legacy aliases have been removed from the active runtime surface.
-
-\subsection{Canonical API v1 Endpoints}
-\begin{longtable}{p{0.36\linewidth} p{0.14\linewidth} p{0.45\linewidth}}
-\toprule
-Path & Method & Purpose \\
-\midrule
-\texttt{/api/v1/health} & GET & Service liveness and API version marker \\
-\texttt{/api/v1/health/checklist} & GET & Live checklist (RPi, camera, GPS, BME, storage; ESP backend field kept available) \\
-\texttt{/api/v1/system/status} & GET & Hostname, storage info, runtime timestamp \\
-\texttt{/api/v1/system/server/restart} & POST & Restart \texttt{agriapp-server.service} (user mode) \\
-\texttt{/api/v1/system/reboot} & POST & Reboot Raspberry Pi (requires sudo policy) \\
-\texttt{/api/v1/system/poweroff} & POST & Power off Raspberry Pi (requires sudo policy) \\
-\texttt{/api/v1/network/mode} & GET/POST & Read/set network mode (\texttt{wifi\_only}, \texttt{ap\_only}, \texttt{hybrid\_debug}) \\
-\texttt{/api/v1/logs} & GET & Unified pull-based runtime logs (server + loops) \\
-\texttt{/api/v1/logs/stream} & GET & Unified push log stream (SSE) \\
-\texttt{/api/v1/images} & GET & Paginated image listing + metadata/filtering \\
-\texttt{/api/v1/images/\{filename\}/status} & GET & Per-image status, file size, metadata summary \\
-\texttt{/api/v1/images/\{filename\}/thumbnail} & GET & Cached thumbnail stream (query \texttt{w}) \\
-\texttt{/api/v1/images/delete} & POST & Delete one image and related artifacts \\
-\texttt{/api/v1/images/delete-all} & POST & Delete all images and related artifacts \\
-\texttt{/api/v1/images/upload} & POST & Upload image from external producer \\
-\texttt{/api/v1/labels} & GET & Read label state for one image \\
-\texttt{/api/v1/labels} & POST & Save labels (JSON + YOLO export sync) \\
-\texttt{/api/v1/capture/rpi/oneshot} & POST & Trigger one Raspberry Pi camera capture \\
-\texttt{/api/v1/capture/esp/oneshot} & GET & Trigger ESP capture via backend proxy \\
-\texttt{/api/v1/esp/status} & GET & Probe ESP status endpoint via backend \\
-\texttt{/api/v1/capture/loop/status} & GET & Inspect unattended capture loop state \\
-\texttt{/api/v1/capture/loop/start} & POST & Start unattended capture loop (\texttt{interval\_seconds}) \\
-\texttt{/api/v1/capture/loop/stop} & POST & Stop unattended capture loop \\
-\texttt{/api/v1/capture/esp/loop/status} & GET & Inspect unattended ESP capture loop state \\
-\texttt{/api/v1/capture/esp/loop/start} & POST & Start unattended ESP loop (\texttt{interval\_seconds}, \texttt{esp\_base}) \\
-\texttt{/api/v1/capture/esp/loop/stop} & POST & Stop unattended ESP capture loop \\
-\texttt{/api/v1/download/dataset} & GET & Download full dataset archive \\
-\texttt{/api/v1/download/dataset-selected} & POST & Download archive for selected filenames \\
-\texttt{/api/v1/images/download-with-labels} & GET & Download one image bundle (image+labels+json+metadata) \\
-\bottomrule
-\end{longtable}
-
-\subsection{UI Routes}
-\begin{longtable}{p{0.36\linewidth} p{0.14\linewidth} p{0.45\linewidth}}
-\toprule
-Path & Method & Purpose \\
-\midrule
-\texttt{/} & GET & Entry page \\
-\texttt{/gallery} & GET & Web gallery interface \\
-\texttt{/capture} & GET & Web capture/control page \\
-\texttt{/system} & GET & Web system/network page \\
-\texttt{/health} & GET & Web live checklist page (RPi/camera/GPS/BME/storage) \\
-\texttt{/log} & GET & Web runtime log page \\
-\texttt{/label} & GET & Web labeler interface (query \texttt{image}) \\
-\bottomrule
-\end{longtable}
-
-\subsection{Compatibility (Legacy) Routes}
-Legacy aliases have been removed from the runtime surface after migration of active clients to \texttt{/api/v1}. New integrations must target canonical versioned endpoints only.
-
-\subsection{Current Web Exposure Policy}
-The web frontend currently runs in RPi-only control mode for field stability. This means ESP controls are intentionally hidden in web routes (\texttt{/capture}, \texttt{/system}, \texttt{/health}), while ESP APIs remain available in \texttt{/api/v1} for diagnostics and phased reintegration.
-
-\subsection{Endpoint Grouping by Device}
-\subsubsection{Raspberry Pi Edge Node}
-Core operational routes for the edge runtime include system status/control, network mode switching, local capture, ESP proxy capture, and unattended loop control. These endpoints are consumed by both browser and tablet clients, and are also used for shell-based validation via \texttt{curl}.
-
-\subsubsection{Web Client}
-The web interface consumes the same \texttt{/api/v1/images}, \texttt{/api/v1/labels}, deletion, thumbnail, and dataset download contracts used by other clients. This avoids browser-specific backend branches and keeps semantics aligned with tablet behavior.
-
-\subsubsection{Android Tablet Client}
-The Android app focuses on operational routes: discovery + health, status, capture one-shot (RPi/ESP), capture loop start/stop (RPi and ESP), gallery pagination with thumbnails, and system/network actions. The app intentionally does not introduce private backend APIs; it reuses the same versioned surface.
-
-\subsection{Request and Response Semantics}
-Most endpoints return JSON payloads with explicit \texttt{status} semantics. Binary endpoints (image and ZIP downloads, thumbnail streams, ESP capture proxy stream) return bytes and may include additional headers.
-
-Pagination is server-side and stable: responses include \texttt{page}, \texttt{page\_size}, \texttt{total\_items}, and \texttt{total\_pages}. This enables consistent navigation rules between web and tablet UIs.
-
-Image items include contextual metadata fields (GPS latitude/longitude and BME280-derived temperature/humidity/pressure when available). Missing sensor readings are represented as \texttt{null} and should be rendered as \texttt{N/A} in client UIs.
-
-\subsection{Capture-Specific Notes}
+AgriApp uses \texttt{/api/v1} as the canonical integration layer for all active clients. The same API surface is consumed by:
 \begin{itemize}
-  \item \textbf{RPi one-shot} (\texttt{/api/v1/capture/rpi/oneshot}) executes \texttt{capture\_rpi.sh --oneshot}, stores the generated image, enriches metadata, and returns latest filename.
-  \item \textbf{ESP one-shot} (\texttt{/api/v1/capture/esp/oneshot}) requires query \texttt{esp\_base}, validates private IP constraints, executes \texttt{capture\_esp.py}, stores an \texttt{esp\_...} image locally, and streams JPEG bytes as response. The response includes optional headers carrying saved filename and metadata hints (\texttt{X-AgriApp-*}) for client-side fast feedback.
-  \item \textbf{RPi loop} endpoints (\texttt{/api/v1/capture/loop/*}) control unattended periodic capture via backend-managed process state; \texttt{/start} accepts \texttt{interval\_seconds} in a bounded range.
-  \item \textbf{ESP loop} endpoints (\texttt{/api/v1/capture/esp/loop/*}) expose the same control model for ESP, with mandatory \texttt{esp\_base} on start. The loop invokes the backend ESP one-shot proxy path to preserve metadata sidecar consistency across manual and unattended captures.
+  \item RPi web UI (\texttt{/rpi/*}),
+  \item Studio web UI (\texttt{/studio/*}),
+  \item Android control app.
 \end{itemize}
 
-\subsection{Error Model}
-The API uses conventional HTTP statuses:
+The practical objective is to keep behavior coherent while decoupling UI composition from backend logic.
+
+\subsection{UI Route Namespaces}
+\begin{longtable}{p{0.28\linewidth} p{0.14\linewidth} p{0.53\linewidth}}
+\toprule
+Path & Method & Purpose \\
+\midrule
+\texttt{/rpi} & GET & RPi home (field operations) \\
+\texttt{/rpi/gallery} & GET & Gallery inspection in read-only labeler mode \\
+\texttt{/rpi/capture} & GET & Capture and loop controls \\
+\texttt{/rpi/system} & GET & Network/system/power controls \\
+\texttt{/rpi/health} & GET & Hardware checklist and health \\
+\texttt{/rpi/log} & GET & Runtime log stream page \\
+\texttt{/rpi/label} & GET & Viewer-oriented label page \\
+\texttt{/studio} & GET & Studio home \\
+\texttt{/studio/gallery} & GET & Curation gallery (labeling enabled) \\
+\texttt{/studio/system} & GET & Dataset import page \\
+\texttt{/studio/log} & GET & Runtime log page \\
+\texttt{/studio/label} & GET & Full labeler page \\
+\bottomrule
+\end{longtable}
+
+Legacy short routes (\texttt{/gallery}, \texttt{/system}, \texttt{/health}, \texttt{/label}, \dots) are still served directly for compatibility.
+
+\subsection{Core API v1 Endpoints}
+\begin{longtable}{p{0.38\linewidth} p{0.12\linewidth} p{0.45\linewidth}}
+\toprule
+Path & Method & Purpose \\
+\midrule
+\texttt{/api/v1/health} & GET & Service liveness \\
+\texttt{/api/v1/health/checklist} & GET & RPi/camera/GPS/BME/storage/ESP checklist \\
+\texttt{/api/v1/system/status} & GET & Hostname and disk status \\
+\texttt{/api/v1/system/server/restart} & POST & Restart backend service \\
+\texttt{/api/v1/system/reboot} & POST & Device reboot \\
+\texttt{/api/v1/system/poweroff} & POST & Device poweroff \\
+\texttt{/api/v1/network/mode} & GET/POST & Read/set network mode \\
+\texttt{/api/v1/logs} & GET & Unified pull logs \\
+\texttt{/api/v1/logs/stream} & GET & Unified SSE push logs \\
+\texttt{/api/v1/images} & GET & Paginated image list + metadata \\
+\texttt{/api/v1/images/\{filename\}/status} & GET & Single image status \\
+\texttt{/api/v1/images/\{filename\}/thumbnail} & GET & Cached thumbnail stream \\
+\texttt{/api/v1/images/delete} & POST & Delete one image + artifacts \\
+\texttt{/api/v1/images/delete-all} & POST & Delete all images + artifacts \\
+\texttt{/api/v1/images/upload} & POST & External image upload \\
+\texttt{/api/v1/labels} & GET & Load labels for image \\
+\texttt{/api/v1/labels} & POST & Save labels (JSON + YOLO TXT) \\
+\texttt{/api/v1/capture/rpi/oneshot} & POST & RPi one-shot capture \\
+\texttt{/api/v1/capture/loop/status} & GET & RPi loop status \\
+\texttt{/api/v1/capture/loop/start} & POST & RPi loop start \\
+\texttt{/api/v1/capture/loop/stop} & POST & RPi loop stop \\
+\texttt{/api/v1/capture/esp/oneshot} & GET & ESP one-shot via backend proxy \\
+\texttt{/api/v1/capture/esp/loop/status} & GET & ESP loop status \\
+\texttt{/api/v1/capture/esp/loop/start} & POST & ESP loop start \\
+\texttt{/api/v1/capture/esp/loop/stop} & POST & ESP loop stop \\
+\texttt{/api/v1/esp/status} & GET & ESP probe endpoint \\
+\texttt{/api/v1/download/dataset} & GET & Full dataset export ZIP \\
+\texttt{/api/v1/download/dataset-selected} & GET/POST & Visible/selected export ZIP \\
+\texttt{/api/v1/images/download-with-labels} & GET & Single image bundle export ZIP \\
+\texttt{/api/v1/images/download} & GET & Single image download attachment \\
+\texttt{/api/v1/studio/import} & POST & Studio dataset import ZIP \\
+\bottomrule
+\end{longtable}
+
+\subsection{Export and Import Semantics}
+Dataset export filenames include a server-side timestamp:
+\begin{itemize}
+  \item \texttt{agriapp\_dataset\_YYYYMMDD-HHMMSS.zip}
+  \item \texttt{agriapp\_dataset\_visible\_YYYYMMDD-HHMMSS.zip}
+\end{itemize}
+
+The Studio import endpoint consumes ZIP files containing \texttt{images/}, \texttt{labels/}, \texttt{jsons/} (or \texttt{json/}), and \texttt{metadata/}. Import is best-effort with explicit report counters (\texttt{imported}, \texttt{skipped}, \texttt{errors}).
+
+\subsection{Response Conventions}
+Most routes return JSON and include an explicit status field. Binary responses are used for:
+\begin{itemize}
+  \item image downloads,
+  \item ZIP exports,
+  \item thumbnail streaming,
+  \item ESP one-shot JPEG proxy output.
+\end{itemize}
+
+Pagination is server-side and stable (\texttt{page}, \texttt{page\_size}, \texttt{total\_items}, \texttt{total\_pages}), so web and Android can use identical navigation logic.
+
+\subsection{Notes on Error Handling}
+HTTP codes follow standard semantics:
 \begin{itemize}
   \item \texttt{2xx}: success,
-  \item \texttt{4xx}: request or state errors (missing params, invalid mode, resource not found),
-  \item \texttt{5xx}: backend/runtime execution failures.
+  \item \texttt{4xx}: request/state issues (missing params, invalid filenames, not found),
+  \item \texttt{5xx}: runtime/backend execution failures.
 \end{itemize}
 
-In failure paths, JSON responses include compact diagnostic context (e.g., command stderr tail, validation message, timeout cause) to support field troubleshooting without requiring immediate shell access.
-
-\subsection{Migration Guidance}
-Client integrations are now converged on \texttt{/api/v1}. Future API evolution should preserve versioned routing discipline (\texttt{/api/vN}) and avoid introducing unversioned operational aliases.
+Error payloads include concise diagnostic context to support field troubleshooting without immediate shell access.

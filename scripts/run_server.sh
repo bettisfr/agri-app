@@ -9,7 +9,9 @@ cd "${PROJECT_DIR}"
 # Optional per-host overrides.
 if [[ -f "${PROJECT_DIR}/.env.systemd" ]]; then
   # shellcheck disable=SC1091
+  set -a
   source "${PROJECT_DIR}/.env.systemd"
+  set +a
 fi
 
 if [[ -z "${PYENV_ROOT:-}" ]]; then

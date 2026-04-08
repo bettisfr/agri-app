@@ -25,7 +25,7 @@
 
         <div id="controlsArea" class="disabled">
             <div class="sidebar-title-block">
-                <p>Left click to select/create boxes. Middle/right drag to pan, wheel to zoom.</p>
+                <p id="labelerHint">Left click to select/create boxes. Middle/right drag to pan, wheel to zoom.</p>
             </div>
             <div id="status">Waiting for image parameter (?image=...).</div>
 
@@ -34,15 +34,15 @@
                     <span class="info-label">File</span>
                     <span id="imgName" class="info-value">—</span>
                 </div>
-                <div class="info-row">
+                <div id="infoRowLabels" class="info-row">
                     <span class="info-label">Labels</span>
                     <span id="numLabels" class="info-value info-pill">—</span>
                 </div>
-                <div class="info-row">
+                <div id="infoRowTp" class="info-row">
                     <span class="info-label">TP</span>
                     <span id="numTp" class="info-value info-pill info-pill-tp">0</span>
                 </div>
-                <div class="info-row">
+                <div id="infoRowFp" class="info-row">
                     <span class="info-label">FP</span>
                     <span id="numFp" class="info-value info-pill info-pill-fp">0</span>
                 </div>
@@ -58,7 +58,7 @@
 
             <div class="sidebar-actions">
                 <button id="saveTxtBtn" class="option-button">Save labels</button>
-                <button id="downloadCurrentBtn" class="option-button option-button-secondary">Download image + labels</button>
+                <button id="downloadCurrentBtn" class="option-button option-button-secondary">Export image + labels</button>
             </div>
 
         </div>

@@ -12,32 +12,15 @@
             <p class="gallery-subtitle mb-0">Browse captures, review labels, and curate your dataset.</p>
         </div>
         <div class="gallery-hero-actions">
-            <button id="downloadDatasetAllBtn" class="btn-download-dataset">Download all</button>
-            <button id="downloadDatasetVisibleBtn" class="btn-download-dataset btn-download-secondary">Download visible</button>
+            <button id="downloadDatasetAllBtn" class="btn-download-dataset">Export all</button>
+            <button id="downloadDatasetVisibleBtn" class="btn-download-dataset btn-download-secondary">Export visible</button>
             <button id="deleteAllBtn" class="btn-download-dataset btn-download-danger">Delete all</button>
         </div>
     </section>
 
     <section class="gallery-filter-card row mb-4">
-        <div class="col-md-4">
+        <div class="col-md-8">
             <input type="text" id="filterInput" class="form-control gallery-filter-input" placeholder="Filter images...">
-        </div>
-        <div class="col-md-4 gallery-toggle-col">
-            <div class="gallery-toggle-row">
-                <label for="labeledFilterAll" class="gallery-toggle-chip">
-                    <input type="radio" id="labeledFilterAll" name="labeledFilter" value="all" class="form-check-input" checked>
-                    <span>All</span>
-                </label>
-                <label for="onlyLabeledCheckbox" class="gallery-toggle-chip">
-                    <input type="radio" id="onlyLabeledCheckbox" name="labeledFilter" value="non_labeled" class="form-check-input">
-                    <span>Non labeled</span>
-                </label>
-                <label for="labeledOnlyCheckbox" class="gallery-toggle-chip">
-                    <input type="radio" id="labeledOnlyCheckbox" name="labeledFilter" value="labeled" class="form-check-input">
-                    <span>Labeled</span>
-                </label>
-            </div>
-            <div id="labeledCounter" class="gallery-counter-text">0 / 0 labeled (shown 0)</div>
         </div>
         <div class="col-md-2 d-flex align-items-center justify-content-md-end mt-3 mt-md-0 gallery-filter-per-page">
             <label for="pageSizeSelect" class="me-2 mb-0">Per page</label>
@@ -61,7 +44,13 @@
         </div>
     </section>
 
-    <div id="gallery" class="row g-4 justify-content-center"></div>
+    <div
+        id="gallery"
+        class="row g-4 justify-content-center"
+        data-labeler-readonly="{{ '1' if gallery_labeler_readonly else '0' }}"
+        data-label-page="{{ label_page_path or '/label' }}"
+        data-ui-mode="{{ ui_mode or 'rpi' }}"
+    ></div>
     <section class="gallery-pagination-wrap">
         <div id="paginationInfo" class="gallery-pagination-info"></div>
         <div id="paginationControls" class="gallery-pagination-controls"></div>
@@ -102,5 +91,5 @@
 
 {% block page_scripts %}
 <script src="{{ url_for('static', filename='vendor/socketio/socket.io.min.js') }}"></script>
-<script src="{{ url_for('static', filename='gallery-app.js') }}"></script>
+<script src="{{ url_for('static', filename='gallery-app.js') }}?v=20260408-export-visible-fix"></script>
 {% endblock %}

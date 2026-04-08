@@ -12,6 +12,12 @@ const ROUTES = {
 
 const gallery = document.getElementById("gallery");
 const socket = typeof io === "function" ? io() : null;
+const LABELER_READONLY = (gallery?.dataset?.labelerReadonly || "0") === "1";
+const UI_MODE = (gallery?.dataset?.uiMode || "rpi").toLowerCase();
+const IS_STUDIO_MODE = UI_MODE === "studio";
+if (gallery?.dataset?.labelPage) {
+    ROUTES.labelPage = gallery.dataset.labelPage;
+}
 
 const galleryState = {
     pageImages: [],
@@ -55,6 +61,12 @@ function toNumber(value, fallback) {
     return Number.isFinite(value) ? value : fallback;
 }
 
+function exportTimestampTag() {
+    const d = new Date();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+}
+
 function getSelectedLabelFilterValue() {
     const selected = document.querySelector('input[name="labeledFilter"]:checked');
     return selected ? selected.value : "all";
@@ -80,9 +92,11 @@ function buildThumbnailUrl(filename) {
 }
 
 function buildMetadataHTML(imageData) {
+    const sizeText = formatBytes(imageData.file_size_bytes ?? 0);
+    const resolutionText = formatResolution(imageData);
+    const labelsCount = imageData.labels_count ?? 0;
     const labeledText = imageData.is_labeled ? "Labeled" : "To label";
     const labeledClass = imageData.is_labeled ? "ok" : "todo";
-    const sizeText = formatBytes(imageData.file_size_bytes ?? 0);
     const latLonText = formatLatLon(imageData.metadata);
     const envText = formatEnvSensors(imageData.metadata);
     const detailLines = [];
@@ -93,12 +107,16 @@ function buildMetadataHTML(imageData) {
         .map((line) => `<div class=\"gallery-meta-row gallery-meta-gps\">${line}</div>`)
         .join("");
 
+    const studioLabelHtml = IS_STUDIO_MODE
+        ? `<div class="gallery-meta-row"><span><strong>${labelsCount}</strong> labels</span><span class="gallery-meta-pill ${labeledClass}">${labeledText}</span></div>`
+        : "";
+
     return `
         <div class="gallery-meta-name">${imageData.filename}</div>
+        ${studioLabelHtml}
         <div class="gallery-meta-row">
-            <span><strong>${imageData.labels_count ?? 0}</strong> labels</span>
             <span>${sizeText}</span>
-            <span class="gallery-meta-pill ${labeledClass}">${labeledText}</span>
+            <span>${resolutionText}</span>
         </div>
         ${detailHtml}
     `;
@@ -141,6 +159,15 @@ function formatModalMetadata(imageData) {
     if (env) parts.push(env);
     if (parts.length === 0) return "Metadata: n/a";
     return parts.join(" | ");
+}
+
+function formatResolution(imageData) {
+    const width = Number(imageData?.image_width);
+    const height = Number(imageData?.image_height);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return "n/a";
+    }
+    return `${Math.trunc(width)}x${Math.trunc(height)}`;
 }
 
 function formatEnvSensors(metadata) {
@@ -197,7 +224,9 @@ function openLabelerModal(filename) {
     overlay.classList.add("fullscreen");
 
     galleryState.activeLabelerFilename = filename;
-    frame.src = `${ROUTES.labelPage}?image=${encodeURIComponent(filename)}`;
+    const params = new URLSearchParams({ image: filename });
+    if (LABELER_READONLY) params.set("readonly", "1");
+    frame.src = `${ROUTES.labelPage}?${params.toString()}`;
     overlay.classList.add("open");
     document.body.style.overflow = "hidden";
     updateModalNavigationButtons();
@@ -273,9 +302,16 @@ function updateModalStatusTag() {
     if (metaEl) {
         metaEl.textContent = formatModalMetadata(imageData);
     }
-    statusTag.textContent = isLabeled ? "Labeled" : "To label";
-    statusTag.classList.toggle("ok", isLabeled);
-    statusTag.classList.toggle("todo", !isLabeled);
+    if (LABELER_READONLY) {
+        statusTag.textContent = "View";
+        statusTag.classList.remove("ok", "todo");
+        statusTag.classList.add("view");
+    } else {
+        statusTag.textContent = isLabeled ? "Labeled" : "To label";
+        statusTag.classList.toggle("ok", isLabeled);
+        statusTag.classList.toggle("todo", !isLabeled);
+        statusTag.classList.remove("view");
+    }
 }
 
 async function refreshSingleImageCard(filename) {
@@ -588,37 +624,26 @@ async function loadGalleryImages() {
 }
 
 async function downloadVisibleImages() {
-    const filenames = galleryState.pageImages.map((img) => img.filename);
+    let filenames = galleryState.pageImages.map((img) => img.filename).filter(Boolean);
     if (filenames.length === 0) {
-        alert("No visible images to download.");
+        await loadGalleryImages();
+        filenames = galleryState.pageImages.map((img) => img.filename).filter(Boolean);
+    }
+    if (filenames.length === 0) {
+        alert("No visible images to export.");
         return;
     }
-
-    const response = await fetch(ROUTES.downloadVisible, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filenames }),
-    });
-
-    if (!response.ok) {
-        alert(`Download failed: ${await response.text()}`);
-        return;
+    const params = new URLSearchParams();
+    for (const name of filenames) {
+        params.append("filename", name);
     }
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "agriapp_dataset_visible.zip";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    window.location.href = `${ROUTES.downloadVisible}?${params.toString()}`;
 }
 
 function bindControls() {
     const downloadAllBtn = dom.downloadAllBtn();
     if (downloadAllBtn) {
+        downloadAllBtn.textContent = "Export all";
         downloadAllBtn.addEventListener("click", () => {
             window.location.href = ROUTES.downloadAll;
         });
@@ -626,10 +651,11 @@ function bindControls() {
 
     const downloadVisibleBtn = dom.downloadVisibleBtn();
     if (downloadVisibleBtn) {
+        downloadVisibleBtn.textContent = "Export visible";
         downloadVisibleBtn.addEventListener("click", () => {
             downloadVisibleImages().catch((err) => {
-                console.error("Download visible failed:", err);
-                alert(`Download failed: ${err}`);
+                console.error("Export visible failed:", err);
+                alert(`Export failed: ${err}`);
             });
         });
     }
