@@ -21,8 +21,8 @@ rpi_placeholder = "framework"; // [framework, simple, off]
 wall = 3.0;
 clearance = 0.35;
 
-box_w = 134;
-box_d = 108;
+box_w = 154;
+box_d = 128;
 box_h = 42;
 corner_r = 5;
 
@@ -63,8 +63,8 @@ rpi_hole_dy = 49;
 rpi_hole_from_left = 3.5;
 rpi_hole_from_front = 3.5;
 rpi_pcb_t = 1.6;
-rpi_board_x = 26;
-rpi_board_y = 34;
+rpi_board_x = 36;
+rpi_board_y = 15;
 rpi_rotation_deg = 180;
 rpi_standoff_h = 6;
 rpi_standoff_d = 6.5;
@@ -84,8 +84,11 @@ rpi_usbc_h = 3.5;
 rpi_hdmi_w = 8.5;
 rpi_hdmi_d = 7;
 rpi_hdmi_h = 3.2;
-rpi_mipi_w = 22;
-rpi_mipi_d = 4;
+rpi_mipi_rows = 22;
+rpi_mipi_pitch = 0.5;
+rpi_mipi_body_adj = 1.9;
+rpi_mipi_w = rpi_mipi_body_adj + rpi_mipi_rows * rpi_mipi_pitch;
+rpi_mipi_d = 3.5;
 rpi_mipi_h = 2.2;
 
 // Camera Module 3 board is about 25 x 24 mm.
@@ -100,9 +103,12 @@ cam_opening_margin_from_screw_centers = 4.5;
 cam_opening_w = cam_screw_gap_x - 2 * cam_opening_margin_from_screw_centers;
 cam_opening_h = 18;
 cam_opening_z_offset = -1.5;
-cam_side_y = box_d * 0.72;
+// Align the camera lens axis with the actual centerline of the rotated MIPI FFC connectors.
+cam_side_y = rpi_board_y + rpi_d - (1 + rpi_mipi_w / 2);
 cam_square_opening = cam_screw_gap_x - 2 * cam_opening_margin_from_screw_centers;
-cam_plate_t = 5;
+cam_window_pocket_size = 20.3;
+cam_window_pocket_depth = 1.3;
+cam_plate_t = 4;
 cam_plate_side_margin = 3;
 cam_plate_top_margin = 5;
 
@@ -397,18 +403,30 @@ module base_shell() {
 
         // Camera square opening on the short side, shifted toward the RPi FFC connectors.
         translate([
-            box_w - wall - box_seal_rib_h - 1,
+            -1,
             cam_side_y - cam_square_opening / 2,
             box_h * 0.58 + cam_opening_z_offset - cam_square_opening / 2
         ])
             cube([wall + box_seal_rib_h + 2, cam_square_opening, cam_square_opening]);
+
+        // Shallow exterior pocket for a 20 x 20 x 1 mm optical window.
+        translate([
+            -0.1,
+            cam_side_y - cam_window_pocket_size / 2,
+            box_h * 0.58 + cam_opening_z_offset - cam_window_pocket_size / 2
+        ])
+            cube([
+                cam_window_pocket_depth + 0.1,
+                cam_window_pocket_size,
+                cam_window_pocket_size
+            ]);
 
     }
 }
 
 module camera_mount() {
     mount_z = box_h * 0.58;
-    mount_x = box_w - wall - cam_plate_t + 0.15;
+    mount_x = wall - 0.15;
     plate_w = cam_screw_gap_x + 2 * cam_plate_side_margin;
     plate_h = mount_z + cam_screw_gap_z / 2 + cam_plate_top_margin - wall;
     plate_z = wall;
