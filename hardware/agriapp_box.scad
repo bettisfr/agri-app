@@ -100,6 +100,8 @@ cam_opening_margin_from_screw_centers = 4.5;
 cam_opening_w = cam_screw_gap_x - 2 * cam_opening_margin_from_screw_centers;
 cam_opening_h = 18;
 cam_opening_z_offset = -1.5;
+cam_side_y = box_d * 0.72;
+cam_square_opening = cam_screw_gap_x - 2 * cam_opening_margin_from_screw_centers;
 cam_plate_t = 5;
 cam_plate_side_margin = 3;
 cam_plate_top_margin = 5;
@@ -393,39 +395,43 @@ module base_shell() {
                 max(0.1, corner_r - wall)
             );
 
-        // Front camera elliptical opening, kept 4.5 mm away from left/right screw centers.
-        translate([box_w / 2, -0.1, box_h * 0.58 + cam_opening_z_offset])
-            rotate([-90, 0, 0])
-                scale([cam_opening_w / cam_opening_h, 1, 1])
-                    cylinder(d = cam_opening_h, h = wall + box_seal_rib_h + 2);
+        // Camera square opening on the short side, shifted toward the RPi FFC connectors.
+        translate([
+            box_w - wall - box_seal_rib_h - 1,
+            cam_side_y - cam_square_opening / 2,
+            box_h * 0.58 + cam_opening_z_offset - cam_square_opening / 2
+        ])
+            cube([wall + box_seal_rib_h + 2, cam_square_opening, cam_square_opening]);
 
     }
 }
 
 module camera_mount() {
     mount_z = box_h * 0.58;
-    mount_y = wall - 0.15;
+    mount_x = box_w - wall - cam_plate_t + 0.15;
     plate_w = cam_screw_gap_x + 2 * cam_plate_side_margin;
     plate_h = mount_z + cam_screw_gap_z / 2 + cam_plate_top_margin - wall;
     plate_z = wall;
     hole_center_z = mount_z - plate_z;
 
-    // Thin inner plate merged into the front wall and resting on the floor.
-    translate([(box_w - plate_w) / 2, mount_y, plate_z])
+    // Thin inner plate merged into the short side wall and resting on the floor.
+    translate([mount_x, cam_side_y - plate_w / 2, plate_z])
         difference() {
-            cube([plate_w, cam_plate_t, plate_h]);
+            cube([cam_plate_t, plate_w, plate_h]);
 
-            // Lens clearance, aligned with the elliptical front opening.
-            translate([plate_w / 2, -0.2, hole_center_z + cam_opening_z_offset])
-                rotate([-90, 0, 0])
-                    scale([cam_opening_w / cam_opening_h, 1, 1])
-                        cylinder(d = cam_opening_h, h = cam_plate_t + 0.4);
+            // Lens clearance, aligned with the square side opening.
+            translate([
+                -0.2,
+                plate_w / 2 - cam_square_opening / 2,
+                hole_center_z + cam_opening_z_offset - cam_square_opening / 2
+            ])
+                cube([cam_plate_t + 0.4, cam_square_opening, cam_square_opening]);
 
             // Camera board fixing holes, approximate Camera Module 3 pattern.
-            for (xoff = [-cam_screw_gap_x / 2, cam_screw_gap_x / 2])
+            for (yoff = [-cam_screw_gap_x / 2, cam_screw_gap_x / 2])
                 for (zoff = [-cam_screw_gap_z / 2, cam_screw_gap_z / 2])
-                    translate([plate_w / 2 + xoff, -0.2, hole_center_z + zoff])
-                        rotate([-90, 0, 0])
+                    translate([-0.2, plate_w / 2 + yoff, hole_center_z + zoff])
+                        rotate([0, 90, 0])
                             cylinder(d = cam_screw_d, h = cam_plate_t + 0.4);
         }
 }
