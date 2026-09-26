@@ -4,8 +4,7 @@
 AgriApp uses \texttt{/api/v1} as the canonical integration layer for all active clients. The same API surface is consumed by:
 \begin{itemize}
   \item RPi web UI (\texttt{/rpi/*}),
-  \item Studio web UI (\texttt{/studio/*}),
-  \item Android control app.
+  \item Studio web UI (\texttt{/studio/*}).
 \end{itemize}
 
 The practical objective is to keep behavior coherent while decoupling UI composition from backend logic.
@@ -91,7 +90,7 @@ Most routes return JSON and include an explicit status field. Binary responses a
   \item ESP one-shot JPEG proxy output.
 \end{itemize}
 
-Pagination is server-side and stable (\texttt{page}, \texttt{page\_size}, \texttt{total\_items}, \texttt{total\_pages}), so web and Android can use identical navigation logic.
+Pagination is server-side and stable (\texttt{page}, \texttt{page\_size}, \texttt{total\_items}, \texttt{total\_pages}), keeping response sizes predictable for browser clients.
 
 \subsection{Notes on Error Handling}
 HTTP codes follow standard semantics:

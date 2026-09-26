@@ -3,7 +3,7 @@
 \subsection{Validation Philosophy}
 In AgriApp Control, testing is treated as an operational assurance process, not only as a code-level quality gate. Since the platform is deployed on edge hardware and used in variable network environments, validation must cover both software correctness and runtime behavior under realistic conditions.
 
-For this reason, test activities are structured across multiple layers: backend endpoint behavior, client integration behavior, and deployment/runtime continuity. A feature is considered validated only when these layers remain coherent after synchronization and service reload.
+For this reason, test activities are structured across multiple layers: backend endpoint behavior, browser workflow behavior, and deployment/runtime continuity. A feature is considered validated only when these layers remain coherent after synchronization and service reload.
 
 \subsection{Backend Validation}
 Backend validation starts from endpoint correctness and contract stability. Health, system status, capture, gallery, labels, and control routes are verified through direct HTTP calls. This step confirms that request/response schemas remain compatible with clients and that versioned endpoints under \texttt{/api/v1} are operational.
@@ -44,36 +44,21 @@ For each test image, the benchmark records:
 
 Artifacts are exported under a timestamped run folder with a summary CSV and detailed JSON traces. This provides a stable evidence trail for comparative sections in the manuscript while keeping runtime UI concerns separated from evaluation workflows.
 
-\subsection{Android Client Validation}
-Tablet validation combines API integration, discovery behavior, and interaction safety. The app must:
-\begin{itemize}
-  \item discover reachable Raspberry Pi endpoints quickly;
-  \item use paginated gallery contracts consistently;
-  \item refresh gallery state via pull-down without triggering full discovery scans;
-  \item render gallery grid thumbnails and open full-resolution detail view;
-  \item execute capture actions (RPi and ESP proxy) and render results;
-  \item execute system control actions through confirmed flows.
-\end{itemize}
-
-Validation also includes UI-level safeguards for high-impact operations (delete-all, reboot, poweroff), ensuring that destructive actions require explicit confirmation and produce clear feedback in logs/status components.
-Auto-capture validation now explicitly includes three start modes (\texttt{RPi}, \texttt{ESP}, \texttt{Both}) and corresponding stop actions, verifying that each loop state is correctly reflected in UI and backend status endpoints.
-Validation also includes interaction guards: start must be disabled while loops are active, and stop must be enabled only when at least one loop is running.
-
 \subsection{Network-Mode Validation}
 Because deployment environments are heterogeneous, testing includes explicit network-mode checks. In infrastructure Wi-Fi mode, clients must connect through known subnet endpoints with minimal discovery overhead. In AP rescue mode, the same core operations must remain available without dependence on external routers.
 
-Mode transitions are tested as workflows, not as isolated toggles. This means validating that, after switching network context, discovery, status retrieval, gallery access, and capture controls remain functional without manual repair steps. Current client behavior includes an automatic discovery pass shortly after mode switching to absorb expected subnet changes.
+Mode transitions are tested as workflows, not as isolated toggles. This means validating that, after switching network context, status retrieval, gallery access, and capture controls remain functional without manual repair steps.
 
 \subsection{Regression Strategy}
 The project follows an iterative ``change-verify-sync'' cycle. After meaningful modifications:
 \begin{enumerate}
-  \item local compile/build checks are executed (\texttt{py\_compile}, Gradle, LaTeX where relevant);
+  \item local compile/build checks are executed (\texttt{py\_compile}, LaTeX where relevant);
   \item functional checks are run on impacted workflows;
   \item artifacts are synchronized to Raspberry Pi;
   \item backend service is reloaded and critical endpoints are rechecked.
 \end{enumerate}
 
-This strategy is intentionally pragmatic. It provides rapid feedback while keeping regression risk low in a system where backend, web frontend, and mobile client evolve together.
+This strategy is intentionally pragmatic. It provides rapid feedback while keeping regression risk low in a system where backend and browser interfaces evolve together.
 
 \subsection{Reproducibility Artifacts for Publication}
 Comparative experiments are exported as filesystem artifacts, not only terminal logs. The benchmark workflow stores:
@@ -94,7 +79,6 @@ A deployment iteration is considered acceptable when the following conditions ar
   \item contextual metadata values are persisted and rendered when available;
   \item thumbnail endpoints return reduced payload images for list/grid views;
   \item gallery pagination and label workflows remain consistent;
-  \item Android app build/install/run sequence succeeds;
   \item system control actions are available and safely guarded;
   \item network mode switching does not break baseline operations.
 \end{itemize}

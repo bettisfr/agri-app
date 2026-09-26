@@ -4,8 +4,7 @@ set -euo pipefail
 # Deploy project to Raspberry Pi via rsync over SSH.
 # Modes: --mount, --umount, --sync, --sync-dry, --ssh, --remote-cmd,
 #        --git-pull, --git-push, --git-commit, --reload-server, --reload-local-server,
-#        --esp-build, --esp-flash,
-#        --android-build, --android-install, --android-run, --android-cir.
+#        --esp-build, --esp-flash.
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
 MODE=""
@@ -22,9 +21,6 @@ RSYNC_SSH_PORT="22"
 ESP_FQBN="esp32:esp32:esp32cam"
 ESP_PORT="/dev/ttyUSB0"
 ESP_SKETCH_DIR="firmware/esp32-cam"
-ANDROID_DIR="mobile/android"
-ANDROID_APK="app/build/outputs/apk/debug/app-debug.apk"
-ANDROID_COMPONENT="it.unipg.agriapp/.MainActivity"
 LOCAL_SERVER_SERVICE="agriapp-local.service"
 
 usage() {
@@ -46,10 +42,6 @@ Modes (choose one):
   --reload-local-server  Restart local Studio server service.
   --esp-build            Compile ESP32 firmware with arduino-cli.
   --esp-flash            Compile + flash ESP32 firmware.
-  --android-build        Build Android debug APK.
-  --android-install      Install Android debug APK with adb.
-  --android-run          Launch Android app activity with adb.
-  --android-cir          Build + Install + Run Android app.
 
 Options:
   --msg, -m <message>            Commit message (for --git-commit).
@@ -60,17 +52,12 @@ Options:
   --mount-path <remote_path>     Remote mount path for sshfs (default: ${REMOTE_MOUNT_PATH}).
   --mount-dir <local_dir>        Local mount dir for sshfs (default: ${MOUNT_DIR}).
   --port <ssh_port>              SSH port (default: ${RSYNC_SSH_PORT}).
+  --local-service <name>         Local server service (default: ${LOCAL_SERVER_SERVICE}).
 
 ESP options:
   --esp-port <tty>               Serial port (default: ${ESP_PORT}).
   --esp-fqbn <fqbn>              Board FQBN (default: ${ESP_FQBN}).
   --esp-sketch-dir <dir>         Sketch directory (default: ${ESP_SKETCH_DIR}).
-
-Android options:
-  --android-dir <dir>            Android project dir (default: ${ANDROID_DIR}).
-  --android-apk <rel_path>       APK path from android dir (default: ${ANDROID_APK}).
-  --android-component <pkg/.Act> Activity component (default: ${ANDROID_COMPONENT}).
-  --local-service <name>        Local server service (default: ${LOCAL_SERVER_SERVICE}).
 
 Help:
   -h, --help                     Show this help message.
@@ -117,18 +104,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --esp-flash)
       MODE="esp-flash"
-      ;;
-    --android-build)
-      MODE="android-build"
-      ;;
-    --android-install)
-      MODE="android-install"
-      ;;
-    --android-run)
-      MODE="android-run"
-      ;;
-    --android-cir|--android-all)
-      MODE="android-cir"
       ;;
     --msg|-m)
       if [[ -z "${2:-}" ]]; then
@@ -218,30 +193,6 @@ while [[ $# -gt 0 ]]; do
       ESP_SKETCH_DIR="$2"
       shift
       ;;
-    --android-dir)
-      if [[ -z "${2:-}" ]]; then
-        usage
-        exit 1
-      fi
-      ANDROID_DIR="$2"
-      shift
-      ;;
-    --android-apk)
-      if [[ -z "${2:-}" ]]; then
-        usage
-        exit 1
-      fi
-      ANDROID_APK="$2"
-      shift
-      ;;
-    --android-component)
-      if [[ -z "${2:-}" ]]; then
-        usage
-        exit 1
-      fi
-      ANDROID_COMPONENT="$2"
-      shift
-      ;;
     --local-service)
       if [[ -z "${2:-}" ]]; then
         usage
@@ -272,21 +223,6 @@ require_arduino_cli() {
     echo "arduino-cli not found in PATH." >&2
     exit 1
   fi
-}
-
-require_android_tools() {
-  if ! command -v adb >/dev/null 2>&1; then
-    echo "adb not found in PATH." >&2
-    exit 1
-  fi
-}
-
-run_android_gradle() {
-  local android_abs_dir="$1"
-  (
-    cd "${android_abs_dir}"
-    GRADLE_USER_HOME="${GRADLE_USER_HOME:-${android_abs_dir}/.gradle-local}" ./gradlew :app:assembleDebug
-  )
 }
 
 if [[ "${MODE}" == "git-pull" ]]; then
@@ -357,37 +293,6 @@ if [[ "${MODE}" == "esp-flash" ]]; then
   exit 0
 fi
 
-if [[ "${MODE}" == "android-build" ]]; then
-  echo "[ANDROID-BUILD] dir=${ANDROID_DIR}"
-  run_android_gradle "${SRC_DIR}/${ANDROID_DIR}"
-  exit 0
-fi
-
-if [[ "${MODE}" == "android-install" ]]; then
-  require_android_tools
-  echo "[ANDROID-INSTALL] apk=${ANDROID_DIR}/${ANDROID_APK}"
-  cd "${SRC_DIR}/${ANDROID_DIR}"
-  adb install -r "${ANDROID_APK}"
-  exit 0
-fi
-
-if [[ "${MODE}" == "android-run" ]]; then
-  require_android_tools
-  echo "[ANDROID-RUN] component=${ANDROID_COMPONENT}"
-  adb shell am start -n "${ANDROID_COMPONENT}"
-  exit 0
-fi
-
-if [[ "${MODE}" == "android-cir" ]]; then
-  require_android_tools
-  echo "[ANDROID-CIR] build + install + run"
-  run_android_gradle "${SRC_DIR}/${ANDROID_DIR}"
-  cd "${SRC_DIR}/${ANDROID_DIR}"
-  adb install -r "${ANDROID_APK}"
-  adb shell am start -n "${ANDROID_COMPONENT}"
-  exit 0
-fi
-
 SSH_TARGET="${REMOTE_USER}@${REMOTE_HOST}"
 SSH_CMD=(ssh -p "${RSYNC_SSH_PORT}" "${SSH_TARGET}")
 
@@ -444,12 +349,6 @@ COMMON_ARGS=(
   --exclude='.venv/'
   --exclude='venv/'
   --exclude='*.pyc'
-  --exclude='mobile/android/.gradle/'
-  --exclude='mobile/android/.gradle-local/'
-  --exclude='mobile/android/.kotlin/'
-  --exclude='mobile/android/build/'
-  --exclude='mobile/android/app/build/'
-  --exclude='mobile/android/local.properties'
   --exclude='firmware/esp32-cam/secrets.h'
   --exclude='static/uploads/images/'
   --exclude='static/uploads/thumbs/'

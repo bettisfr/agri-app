@@ -11,7 +11,6 @@ The project standardizes deployment operations through \texttt{deploy\_rpi.sh}. 
   \item synchronization and remote access (\texttt{--sync}, \texttt{--mount}, \texttt{--ssh}),
   \item backend runtime reload (\texttt{--reload-server}),
   \item ESP build/flash support (\texttt{--esp-build}, \texttt{--esp-flash}),
-  \item Android build/install/run pipeline (\texttt{--android-build}, \texttt{--android-install}, \texttt{--android-run}, \texttt{--android-cir}).
 \end{itemize}
 
 This unifies day-to-day engineering actions behind one operator-facing entry point.
@@ -28,7 +27,7 @@ Current deployment practice separates backend service supervision from capture s
   \item unattended capture loop: controlled dynamically via API endpoints (start/stop/status).
 \end{itemize}
 
-This split was chosen to provide direct operational control from tablet/web interfaces without editing cron/systemd timers during field sessions.
+This split was chosen to provide direct operational control from the web interface and API without editing cron/systemd timers during field sessions.
 
 \subsection{Environment and Dependencies}
 Runtime wrappers (notably \texttt{run\_server.sh} and capture wrappers) support pyenv/venv-based Python environment loading. The deployment checklist must ensure that required packages are present on the Raspberry Pi, including image handling and optional sensor libraries.
@@ -62,9 +61,6 @@ In I2C mode, the minimal wiring uses four lines:
 
 On six-pin boards, \texttt{CSB} and \texttt{SDO/SDD} are optional for basic I2C operation and can be used only when address forcing is needed.
 
-\subsection{Android Deployment Cycle}
-Android deployment is integrated into the same repository workflow. The standard cycle is build-install-run on USB-debug device via \texttt{--android-cir}. Validation after install must include discovery, one-shot capture actions, gallery pagination, and system/network controls.
-
 \subsection{Network Portability}
 The edge node is expected to move across multiple Wi-Fi environments (e.g., home and field networks). Deployment therefore includes maintaining multiple known SSIDs with proper priority, plus AP rescue fallback for infrastructure outages.
 
@@ -73,11 +69,11 @@ Operationally, AP mode is not a special-case debug path: it is part of the prima
 \subsection{Recommended Deployment Runbook}
 A practical release cycle is:
 \begin{enumerate}
-  \item local validation (backend syntax, Android build, LaTeX if docs changed),
+  \item local validation (backend syntax and LaTeX if docs changed),
   \item \texttt{deploy\_rpi.sh --sync},
   \item \texttt{deploy\_rpi.sh --reload-server},
   \item API smoke checks (health, status, gallery, one-shot),
-  \item optional tablet functional checks.
+  \item browser-based functional checks.
 \end{enumerate}
 
 This sequence has proven robust in both office and field transitions.
@@ -137,6 +133,5 @@ Transformers & \texttt{5.5.0} & \texttt{5.5.0} & parity required for mask/box eq
 Torchvision & \texttt{0.25.0} & optional / not required in baseline path & mismatch can break model imports on Studio \\
 SegGPT checkpoint & \texttt{BAAI/seggpt-vit-large} & \texttt{BAAI/seggpt-vit-large} & same checkpoint on both nodes \\
 Backend service & \texttt{agriapp-local.service} & \texttt{agriapp-server.service} & separate lifecycle and logs \\
-Android app package & \texttt{it.unipg.agriapp} & n/a & client package namespace \\
 \bottomrule
 \end{longtable}

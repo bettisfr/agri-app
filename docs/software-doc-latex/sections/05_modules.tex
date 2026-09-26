@@ -27,23 +27,23 @@ The labeling module manages annotation state, editing semantics, and export comp
 Consistency between these artifacts is treated as a data integrity requirement. Save operations update the canonical state and maintain compatibility exports in the same transaction scope.
 
 \subsection{Network and Discovery Module}
-This module spans backend and Android responsibilities. On backend side, it exposes network mode APIs that call dedicated scripts to switch between Wi-Fi and AP operation. On Android side, it implements cache-first discovery and subnet-aware probing.
+This module exposes network mode APIs that call dedicated scripts to switch between Wi-Fi and AP operation. Operators manage network settings through the web system page or command-line tools.
 
-The module uses a deterministic probing strategy to simplify field behavior and debugging. RPi discovery follows the current client subnet, while ESP discovery is constrained to the AP/rescue segment (\texttt{192.168.4.0/24}). This keeps runtime behavior predictable and reduces ambiguity during mode transitions.
+The module uses explicit network profiles and AP rescue mode to keep field behavior predictable and support recovery during mode transitions.
 
 \subsection{System Control Module}
 System control operations are exposed as dedicated high-impact actions: backend restart, Raspberry Pi reboot, and poweroff. This module is safety-oriented: actions are explicit, require deliberate UI confirmation, and return operational feedback suitable for logs.
 
-Its value is practical: routine maintenance can be executed from tablet/web without relying on ad-hoc SSH access for every intervention.
+Its value is practical: routine maintenance can be executed from the web interface without relying on ad-hoc SSH access for every intervention.
 
 \subsection{Client UI Modules}
-Two client families consume the same backend semantics:
+The browser interface consumes the backend semantics through two runtime roles:
 \begin{itemize}
-  \item Web modules: gallery + labeler with browser-centric interactions,
-  \item Android modules: control dashboard + dedicated gallery activity (grid) + image detail view.
+  \item RPi modules: field capture, status, health, and read-only gallery,
+  \item Studio modules: gallery curation, labeling, segmentation, and dataset import.
 \end{itemize}
 
-The project deliberately keeps business rules out of UI layers. Clients orchestrate and visualize; server APIs remain the source of truth.
+The project deliberately keeps business rules out of the UI layer. The browser interface orchestrates and visualizes; server APIs remain the source of truth.
 
 \subsection{Module Cohesion}
 The module graph is cohesive by design: capture produces images; sensor enrichment adds context; gallery and labeling transform raw artifacts into curated datasets; network/discovery keep the system reachable; system control preserves recoverability. This decomposition has proven practical during iterative refactoring because changes can be localized while preserving cross-module contracts.

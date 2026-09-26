@@ -1566,7 +1566,7 @@ def api_network_mode():
 @app.route("/api/v1/images")
 def api_images():
     """
-    Paginated images API for tablet/remote clients.
+    Paginated images API for remote clients.
     """
     filter_str = request.args.get("filter", "").strip().lower()
     only_labeled_raw = request.args.get("only_labeled", "false").strip().lower()
@@ -1811,7 +1811,7 @@ def api_capture_loop_stop():
 def api_esp_capture_proxy():
     """
     Proxy one JPEG capture from ESP-CAM through Raspberry Pi.
-    Useful when tablet cannot reliably reach ESP directly.
+    Useful when a client cannot reliably reach ESP directly.
     """
     esp_mode = (request.args.get("esp_mode") or request.args.get("mode") or "serial").strip().lower()
     if esp_mode not in ("serial",):

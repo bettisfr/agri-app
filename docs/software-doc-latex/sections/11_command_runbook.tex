@@ -2,14 +2,14 @@
 
 \subsection{Local Studio: Service and Basic Checks}
 \begin{lstlisting}[language=bash]
-cd ~/Desktop/github/agri-app
+cd ~/Desktop/github/projects/agri-insect-imaging-platform
 ./deploy_rpi.sh --reload-local-server
 curl -s http://127.0.0.1:5000/api/v1/health
 \end{lstlisting}
 
 \subsection{RPi: Sync and Backend Reload}
 \begin{lstlisting}[language=bash]
-cd ~/Desktop/github/agri-app
+cd ~/Desktop/github/projects/agri-insect-imaging-platform
 ./deploy_rpi.sh --sync
 ./deploy_rpi.sh --reload-server
 \end{lstlisting}
@@ -71,7 +71,7 @@ python ~/agri-app/tools/seggpt_infer.py \
 
 \subsection{Studio vs RPi Comparative Benchmark}
 \begin{lstlisting}[language=bash]
-cd ~/Desktop/github/agri-app
+cd ~/Desktop/github/projects/agri-insect-imaging-platform
 python3 scripts/seggpt_compare_benchmark.py \
   --images \
   rpi_20260408-152834.jpg \

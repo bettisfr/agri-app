@@ -20,7 +20,7 @@ API stability is the second major non-functional requirement. Endpoint contracts
 
 Performance and responsiveness are required at interaction level. Discovery, gallery navigation, and routine operations should remain sufficiently fast on low-power devices and non-ideal networks. This requirement motivates design choices such as cache-first discovery and server-side pagination.
 
-Maintainability is another explicit quality attribute. Backend and frontend code should remain modular and coherent, with minimal duplication between web and tablet clients. Shared semantics must be implemented through common API contracts rather than replicated business logic. In practical terms, this reduces long-term regression risk and simplifies incremental feature development.
+Maintainability is another explicit quality attribute. Backend and frontend code should remain modular and coherent, with minimal duplication between the RPi and Studio web interfaces. Shared semantics must be implemented through common API contracts rather than replicated business logic. In practical terms, this reduces long-term regression risk and simplifies incremental feature development.
 
 Finally, operational safety is required for high-impact actions. System-level operations must include explicit user confirmation, and the software should prefer predictable behavior over aggressive automation when failures might lead to data loss or device unavailability.
 

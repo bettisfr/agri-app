@@ -55,7 +55,6 @@ Both UIs use the same backend and the same `/api/v1` contract surface.
     - sync/mount/ssh
     - reload server (remote + local)
     - ESP build/flash
-    - Android build/install/run
 
 - `scripts/seggpt_compare_benchmark.py`
   - SegGPT benchmark runner (Studio vs RPi) on the same image set and prompt mask.
@@ -130,7 +129,6 @@ Useful deploy modes (full list: `./deploy_rpi.sh --help`):
 - `--reload-local-server` (local Studio service)
 - `--local-service <name>` (override local service name)
 - `--esp-build`, `--esp-flash`
-- `--android-build`, `--android-install`, `--android-run`, `--android-cir`
 
 ## 5. Service Management
 
@@ -234,7 +232,7 @@ GPS serial access is lock-protected in backend. For manual serial diagnostics, s
 
 ```bash
 systemctl --user stop agriapp-server.service
-cd ~/agri-app
+cd ~/Desktop/github/projects/agri-insect-imaging-platform
 python3 test/test-gps.py --port /dev/serial0 --baud 9600 --watch --raw
 systemctl --user start agriapp-server.service
 ```

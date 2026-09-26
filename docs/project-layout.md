@@ -7,7 +7,7 @@
 - `client.py`
   - Compatibility shim for capture entrypoint.
 - `deploy_rpi.sh`
-  - Sync/deploy/reload helper (RPi + local service + Android + ESP tasks).
+  - Sync/deploy/reload helper (RPi + local service + ESP tasks).
 - `requirements.txt`
   - Python dependencies.
 
@@ -40,11 +40,6 @@
   - `vendor/` local third-party assets (Bootstrap, Socket.IO)
   - `uploads/` runtime data folders:
     - `images/`, `labels/`, `jsons/`, `metadata/`, `thumbs/`
-
-## Mobile
-
-- `mobile/android/`
-  - Android control app project.
 
 ## Operations
 

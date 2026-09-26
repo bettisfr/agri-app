@@ -1,17 +1,15 @@
 \section{Implementation}
 
 \subsection{Project Structure}
-AgriApp is organized as a mono-repository where backend, web UI, Android control app, firmware helpers, and operational scripts evolve together. This structure is intentional: the project is deployed as a single edge software stack, and versioning the full stack in one place reduces integration drift.
+AgriApp is organized as a mono-repository where backend, web UI, firmware helpers, and operational scripts evolve together. This structure is intentional: the project is deployed as a single edge software stack, and versioning the full stack in one place reduces integration drift.
 
 \begin{verbatim}
-agri-app/
+agri-insect-imaging-platform/
 |-- backend/                  # Python backend helpers (capture/sensors)
 |-- docs/
 |   `-- software-doc-latex/   # Technical documentation (this report)
 |-- firmware/
 |   `-- esp32-cam/            # ESP32-CAM firmware + utilities
-|-- mobile/
-|   `-- android/              # Android tablet app (Kotlin + Compose)
 |-- old/                      # Deprecated scripts kept for reference
 |-- scripts/                  # Runtime/deploy helper scripts
 |   |-- capture_rpi.sh
@@ -30,7 +28,7 @@ agri-app/
 |-- test/                     # Hardware validation scripts (GPS/BME280)
 |-- client.py                 # Raspberry Pi camera capture client
 |-- server.py                 # Flask backend + API orchestration
-|-- deploy_rpi.sh             # Sync/mount/reload/android/esp helper
+|-- deploy_rpi.sh             # Sync/mount/reload/ESP helper
 `-- README.md
 \end{verbatim}
 
@@ -70,7 +68,7 @@ Dataset import (Studio) & \texttt{images/labels/jsons/metadata} & Adds files; op
 \end{longtable}
 
 \subsection{Backend Implementation}
-The backend is implemented in Python/Flask and runs on Raspberry Pi as the authoritative runtime node. The implementation is API-centric: business logic for capture, gallery lifecycle, annotations, network mode switching, and system operations is concentrated server-side, while clients (web/tablet) remain thin.
+The backend is implemented in Python/Flask and runs on Raspberry Pi as the authoritative runtime node. The implementation is API-centric: business logic for capture, gallery lifecycle, annotations, network mode switching, and system operations is concentrated server-side, while browser clients remain thin.
 
 In concrete terms, \texttt{server.py} currently implements five operational domains. The first is acquisition orchestration: one-shot capture from Raspberry Pi camera through \texttt{scripts/capture\_rpi.sh}, and ESP proxy capture through \texttt{scripts/capture\_esp.py}. The second is gallery lifecycle management: paginated listing, per-image status, thumbnail generation/caching, single delete, and delete-all operations. The third is labeling persistence and conversion to dual artifacts (JSON + YOLO TXT). The fourth is device control and connectivity (restart/reboot/poweroff, Wi-Fi/AP mode switching). The fifth is unattended acquisition control through start/stop/status APIs for capture loops. The loop implementation is split by source, with dedicated RPi and ESP loop states and endpoints.
 
@@ -94,17 +92,6 @@ The labeler view is implemented as an interaction-focused editor for bounding bo
 The \texttt{System} page and \texttt{Gallery} destructive flows now use custom confirmation modals instead of browser default popups, aligning interaction style with the rest of the UI and making high-impact operations (power actions, delete-all) more explicit.
 In the current field baseline, the web UI is intentionally exposed in RPi-only control mode: ESP controls and ESP status blocks are hidden from \texttt{/capture}, \texttt{/system}, and \texttt{/health} to keep operations simpler and less error-prone. ESP proxy endpoints are still present backend-side for optional diagnostics and controlled experiments.
 
-\subsection{Android App Implementation}
-The Android application is written in Kotlin with Jetpack Compose and Retrofit. The UI is state-driven through a central view-model that coordinates discovery, control actions, gallery pagination, and logs.
-
-The app currently exposes two major control planes. The first is connectivity and device operation: discovery, Wi-Fi/AP switching, capture start/stop, one-shot actions for \texttt{RPi}/\texttt{ESP}/\texttt{Both}, and system actions (restart/reboot/poweroff). Recent iterations moved capture and system controls from popup-driven flows to inline controls, reducing interaction friction on phone portrait layouts. Auto-capture start supports source selection (\texttt{RPi}, \texttt{ESP}, or \texttt{Both}) with interval presets (including 30s and minute-scale options), and UI guardrails keep the flow unambiguous: start is disabled while loops are active, while stop is enabled only when relevant loops are running. In addition, auto-loop status synchronization at app bootstrap now aligns UI source/interval chips with backend loop state, avoiding stale selection markers after app restart.
-
-The second control plane is gallery consumption, implemented with paginated grid views and thumbnail-first loading. Each card shows compact source-aware timestamp formatting and contextual metadata summaries. Image detail is handled in a dedicated full-screen activity optimized for portrait devices: zoom/pan gestures, explicit \texttt{Prev}/\texttt{Next} navigation buttons, destructive delete with confirmation, and multiline metadata rendering (GPS, temperature, humidity, pressure) together with image resolution and file size. This separation keeps list interaction lightweight while preserving rich inspection workflows in detail view.
-
-A practical implementation detail is cache-first discovery. Last known hosts are persisted locally and probed before subnet scanning. The current discovery policy is intentionally deterministic: RPi probing follows the current client subnet, while ESP probing is constrained to \texttt{192.168.4.0/24} (rescue/AP segment), avoiding ambiguous hybrid scans. During network mode switches (Wi-Fi $\leftrightarrow$ AP), the app triggers an automatic discovery step after a short delay to recover quickly from expected subnet transitions. Another relevant detail is event-driven in-app logging: connection transitions, discovery outcomes, auto-loop lifecycle events, and shot outcomes are surfaced in a bottom log panel using concise operational messages.
-
-The \texttt{Connections} and \texttt{System} tabs were also restructured for operational clarity. \texttt{Connections} now emphasizes quick reachability context (host chips, AP/Wi-Fi ON/OFF badges, and per-device ``last seen'' indicators). \texttt{System} is segmented into dedicated cards (\texttt{Storage}, \texttt{WiFi}, \texttt{Server}, \texttt{Power}) so high-impact actions are visually separated from network-selection tasks. The Wi-Fi card supports manual ``connect now'' against preconfigured NetworkManager profiles, enabling deterministic network switching from the mobile client.
-
 \subsection{Storage Implementation}
 Persistence is filesystem-based and explicit:
 \begin{itemize}
@@ -123,7 +110,7 @@ The following scripts are currently considered operationally relevant for reprod
 \toprule
 Script & Role \\
 \midrule
-\texttt{deploy\_rpi.sh} & Unified operator entrypoint: sync, mount, remote commands, server reload, ESP build/flash, Android build/install/run. \\
+\texttt{deploy\_rpi.sh} & Unified operator entrypoint: sync, mount, remote commands, server reload, ESP build/flash. \\
 \texttt{scripts/run\_server.sh} & Backend launcher with environment bootstrapping (\texttt{.env.systemd}, pyenv/venv). \\
 \texttt{scripts/capture\_rpi.sh} & Raspberry Pi capture wrapper (oneshot and interval loop modes). \\
 \texttt{scripts/capture\_esp.py} & ESP helper (HTTP and serial capture modes). \\
